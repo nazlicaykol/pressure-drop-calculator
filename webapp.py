@@ -13,12 +13,12 @@ st.set_page_config(
 # --- 2. VERİTABANI (Sözlükler) ---
 # Malzeme Pürüzlülükleri (mm)
 material_list = {
-    "Karbon Çelik (Carbon Steel)": 0.045,
-    "Paslanmaz Çelik (Stainless Steel)": 0.0015,
-    "Bakır (Copper)": 0.0015,
+    "Carbon Steel": 0.045,
+    "Stainless Steel": 0.0015,
+    "Copper": 0.0015,
     "PVC": 0.0015,
-    "Beton (Concrete)": 0.01,
-    "Galvanizli Çelik": 0.15
+    "Concrete": 0.01,
+    "Galvanised Steel": 0.15
 }
 
 # Boru Çapları Veritabanı (Örnek veriler)
@@ -42,42 +42,42 @@ def get_ID(nps, sch):
     return None
 
 # --- 3. ARAYÜZ TASARIMI (GİRDİLER) ---
-st.title("💧 Basınç Kaybı Hesaplayıcı")
+st.title("💧 Pressure Loss Calculator")
 st.markdown("---") # Çizgi çeker
 
-st.subheader("1. Proses Verileri")
+st.subheader("1. Process Data")
 # Girdileri yan yana 2 kolona bölüyoruz
 col1, col2 = st.columns(2)
 
 with col1:
-    temp = st.number_input("Sıcaklık (°C)", value=120.0, step=1.0)
-    flow = st.number_input("Kütlesel Debi (t/h)", value=100.0, step=10.0)
+    temp = st.number_input("Temperature (°C)", value=120.0, step=1.0)
+    flow = st.number_input("Mass Flow Rate (t/h)", value=100.0, step=10.0)
 
 with col2:
     pressure = st.number_input("Basınç (bar)", value=40.0, step=1.0)
     length = st.number_input("Boru Uzunluğu (m)", value=5000.0, step=50.0)
 
-st.subheader("2. Boru Özellikleri")
+st.subheader("2. Pipe Specifications")
 col3, col4 = st.columns(2)
 
 with col3:
-    material_name = st.selectbox("Malzeme Seçin", list(material_list.keys()))
+    material_name = st.selectbox("Choose Material", list(material_list.keys()))
     # Seçilen NPS'ye göre Schedule listesini güncellemek için önce NPS'yi alıyoruz
-    nps_selected = st.selectbox("Nominal Çap (NPS)", list(pipe_database.keys()), index=4) # Varsayılan 4 inch
+    nps_selected = st.selectbox("Nominal Diameter (NPS)", list(pipe_database.keys()), index=4) # Varsayılan 4 inch
 
 with col4:
     # Schedule kutusu, seçilen çapa göre otomatik doluyor
     available_schedules = list(pipe_database[nps_selected].keys())
-    sch_selected = st.selectbox("Schedule (Et Kalınlığı)", available_schedules)
+    sch_selected = st.selectbox("Schedule ", available_schedules)
     
     # Bilgi amaçlı seçilen boruyu gösterelim
     current_ID = get_ID(nps_selected, sch_selected)
-    st.info(f"Seçilen Boru İç Çapı: **{current_ID:.2f} mm**")
+    st.info(f"ID: **{current_ID:.2f} mm**")
 
 # --- 4. HESAPLAMA MOTORU ---
 st.markdown("---")
 # Butonu ortalamak için boş kolonlar kullanabiliriz veya direkt basabiliriz
-if st.button("🚀 HESAPLA", type="primary", use_container_width=True):
+if st.button("CALCULATE", type="primary", use_container_width=True):
     
     # Verileri Hazırla
     roughness = material_list[material_name]
@@ -114,21 +114,21 @@ if st.button("🚀 HESAPLA", type="primary", use_container_width=True):
         dP_bar = dP_pascal / 100000
         
         # --- SONUÇLARI GÖSTER ---
-        st.success("Hesaplama Başarıyla Tamamlandı!")
+        st.success("Calculation Successfully Completed!")
         
         # Sonuçları 4'lü kartlar halinde gösterelim
         res1, res2, res3, res4 = st.columns(4)
         
-        res1.metric("Basınç Kaybı", f"{dP_bar:.1f} bar", delta_color="inverse")
-        res2.metric("Akış Hızı", f"{velocity:.2f} m/s")
-        res3.metric("Reynolds Sayısı", f"{Re:.0f}")
-        res4.metric("Sürtünme Faktörü", f"{f:.5f}")
+        res1.metric("Pressure Loss", f"{dP_bar:.1f} bar", delta_color="inverse")
+        res2.metric("Fluid Velocity", f"{velocity:.2f} m/s")
+        res3.metric("Reynolds Number", f"{Re:.0f}")
+        res4.metric("Fraction Factor", f"{f:.5f}")
         
         # Detaylar için genişletilebilir alan
-        with st.expander("Detaylı Akışkan Özellikleri"):
-            st.write(f"- **Yoğunluk:** {rho:.2f} kg/m³")
-            st.write(f"- **Viskozite:** {mu:.6f} Pa.s")
-            st.write(f"- **Akış Alanı:** {Area:.6f} m²")
+        with st.expander("Detailed Fluid Properties"):
+            st.write(f"- **Density:** {rho:.2f} kg/m³")
+            st.write(f"- **Viscosity:** {mu:.6f} Pa.s")
+            st.write(f"- **Area:** {Area:.6f} m²")
 
     except Exception as e:
-        st.error(f"Hesaplama Hatası: {e}")
+        st.error(f"Calculation Error: {e}")
