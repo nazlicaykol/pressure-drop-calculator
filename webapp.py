@@ -3,10 +3,10 @@ from CoolProp.CoolProp import PropsSI
 import math
 
 # Sayfa Başlığı
-st.title("💧 Basınç Kaybı Hesaplayıcı (Web Versiyonu)")
+st.title("💧 Basınç Kaybı Hesaplayıcı ")
 
 # Sidebar (Sol Menü) - Girdiler buraya
-st.sidebar.header("Girdiler")
+st.sidebar.header("Input")
 
 # Tkinter'daki Entry -> st.number_input
 temp = st.sidebar.number_input("Sıcaklık (°C)", value=120.0)
@@ -46,4 +46,8 @@ if st.button("HESAPLA"):
             st.metric("Viskozite (Pa.s)", f"{visc:.6f}")
             
     except Exception as e:
+        st.error(f"Bir hata oluştu: {e}")
+            
+    except Exception as e:
+
         st.error(f"Bir hata oluştu: {e}")
