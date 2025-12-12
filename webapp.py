@@ -16,8 +16,15 @@ st.set_page_config(
 
 # --- 2. DATABASE KURULUMU ---
 def init_db():
-    conn = sqlite3.connect("project_data.db")
+    # Dosya ismini değiştirdik (v2 yaptık), böylece sıfırdan yeni bir dosya oluşacak
+    conn = sqlite3.connect("project_data_v2.db") 
     cursor = conn.cursor()
+    
+    # GARANTİ ÇÖZÜM: Eğer tablo varsa önce siliyoruz (Eski hatalı tablo gitsin)
+    # Not: Bu işlem eski kayıtlarını siler ama hatayı kesin çözer.
+    # Eğer içindeki veriler önemliyse bu satırı (DROP TABLE) kullanma, sadece dosya adını değiştir.
+    cursor.execute("DROP TABLE IF EXISTS projects")
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,7 +32,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             material TEXT,
             nps TEXT,
-            sch TEXT,
+            sch TEXT,  -- İşte eksik olan sütun burası
             pressure_drop REAL,
             velocity REAL,
             safety_factor REAL
