@@ -6,7 +6,7 @@ from CoolProp.CoolProp import PropsSI
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- 1. SAYFA AYARLARI (Page Config) ---
+# --- 1. SAYFA AYARLARI ---
 st.set_page_config(
     page_title="HydraulicSuite Pro",
     page_icon="🏭",
@@ -36,14 +36,24 @@ def init_db():
 
 init_db()
 
-# --- 3. VERİTABANLARI (GENİŞLETİLMİŞ) ---
-# Malzeme Pürüzlülüğü (mm) ve İzin Verilen Gerilme (Allowable Stress - MPa) [Yaklaşık Değerler]
-material_props = {
-    "Carbon Steel ": {"roughness": 0.045, "stress": 138.0},  # ~20,000 psi
-    "Stainless Steel ": {"roughness": 0.015, "stress": 115.0}, # ~16,700 psi
-    "PVC ": {"roughness": 0.0015, "stress": 14.0},       # ~2,000 psi
-    "Copper ": {"roughness": 0.0015, "stress": 41.0},          # ~6,000 psi
-    "Galvanized Steel": {"roughness": 0.15, "stress": 138.0}
+# --- 3. VERİTABANLARI ---
+material_list = {
+    "Carbon Steel": 0.045,
+    "Stainless Steel": 0.0015,
+    "Copper": 0.0015,
+    "PVC": 0.0015,
+    "Concrete": 0.01,
+    "Galvanized Steel": 0.15
+}
+
+# Malzeme Dayanımları (Safety Check için - MPa)
+material_stress = {
+    "Carbon Steel": 138.0,
+    "Stainless Steel": 115.0,
+    "Copper": 41.0,
+    "PVC": 14.0,
+    "Concrete": 20.0,
+    "Galvanized Steel": 138.0
 }
 
 pipe_database = {
@@ -82,16 +92,15 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.caption("v3.0 | Müh. Nazlıcan Aykol"))
+    st.caption("v3.0 | Engineering Tools") 
 
 # ==================================================
-# SAYFA 1: PRESSURE DROP CALCULATOR (MEVCUT SİSTEM)
+# SAYFA 1: PRESSURE DROP CALCULATOR
 # ==================================================
 if page_selection == "🏠 Pressure Drop Calc":
     st.title("💧 Pressure Drop Calculator")
     st.markdown("Calculate head loss, velocity and flow properties.")
     
-    # Ekranı ikiye bölelim: Girdiler (Sol) - Sonuçlar (Sağ)
     col_input, col_result = st.columns([1, 1.2])
     
     with col_input:
@@ -110,7 +119,7 @@ if page_selection == "🏠 Pressure Drop Calc":
             st.markdown("---")
             st.subheader("Pipe & Material Selection")
             
-            # --- YENİ EKLENEN KISIM: Girdiler Artık Burada ---
+            # --- Girdiler Artık Ana Ekranda ---
             material_name = st.selectbox("Material", list(material_list.keys()))
             
             c3, c4 = st.columns(2)
@@ -120,15 +129,14 @@ if page_selection == "🏠 Pressure Drop Calc":
                 available_schedules = list(pipe_database[nps_selected].keys())
                 sch_selected = st.selectbox("Schedule (Thickness)", available_schedules)
             
-            # Seçilen boru bilgisini anlık göster
+            # Seçilen boru bilgisini göster
             current_ID = get_ID(nps_selected, sch_selected)
             d_info = pipe_database[nps_selected][sch_selected]
-            st.info(f"📋 Pipe Info: OD {d_info['OD']} mm | WT {d_info['WT']} mm | ID {current_ID:.2f} mm")
+            st.info(f"📋 Info: OD {d_info['OD']} mm | WT {d_info['WT']} mm | ID {current_ID:.2f} mm")
             
             project_name = st.text_input("Project Name (Optional)", "My-Calculation-01")
 
             if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
-                # Hesaplama Motoru
                 roughness = material_list[material_name]
                 ID_mm = current_ID
                 T_K = temp + 273.15
@@ -172,7 +180,6 @@ if page_selection == "🏠 Pressure Drop Calc":
                     st.error(f"Error: {e}")
 
     with col_result:
-        # Sonuçlar sağ tarafta görünecek
         if 'res_dp' in st.session_state:
             res = st.session_state['res_dp']
             st.header("2. Results")
@@ -189,103 +196,82 @@ if page_selection == "🏠 Pressure Drop Calc":
             st.subheader("Detailed Properties")
             st.write(f"Density: **{res['rho']:.2f} kg/m³**")
             st.write(f"Viscosity: **{res['mu']:.6f} Pa.s**")
-            
-            # Grafik (Hız vs Basınç Kaybı gibi bir görsel eklenebilir)
             st.caption("Calculation based on Darcy-Weisbach & Colebrook-White equations.")
         else:
             st.info("👈 Please enter data and click Calculate.")
 
 # ==================================================
-# SAYFA 2: WALL THICKNESS SAFETY CHECK (YENİ MODÜL!)
+# SAYFA 2: WALL THICKNESS SAFETY CHECK
 # ==================================================
 elif page_selection == "🛡️ Wall Thickness Check":
-    st.title("🛡️ Pipe Wall Thickness Safety Check")
-    st.markdown("Check if the selected pipe can withstand the internal pressure (ASME B31.3 Standard).")
+    st.title("🛡️ Wall Thickness Check")
     
     col_safe1, col_safe2 = st.columns([1, 1])
     
     with col_safe1:
         with st.container(border=True):
-            st.subheader("Design Conditions")
-            design_pres = st.number_input("Design Pressure (bar)", value=40.0)
-            design_temp = st.number_input("Design Temperature (°C)", value=120.0)
+            st.subheader("Design Parameters")
             
-            # ASME Formülü Gösterimi
-            st.markdown("### Formula (ASME B31.3)")
-            st.latex(r''' t_{min} = \frac{P \cdot D}{2 (S \cdot E + P \cdot Y)} ''')
-            st.caption("P: Pressure, D: OD, S: Stress, E: Quality Factor, Y: Temp Coeff")
+            # Bu sayfada da kendi seçim kutuları olsun
+            mat_safe = st.selectbox("Material", list(material_list.keys()), key="safe_mat")
+            
+            c_s1, c_s2 = st.columns(2)
+            with c_s1:
+                nps_safe = st.selectbox("Size (Inch)", list(pipe_database.keys()), index=6, key="safe_nps")
+            with c_s2:
+                sch_safe = st.selectbox("Schedule", list(pipe_database[nps_safe].keys()), key="safe_sch")
+                
+            design_pres = st.number_input("Design Pressure (bar)", value=40.0)
+            
+            if st.button("🛡️ CHECK SAFETY", type="primary", use_container_width=True):
+                P_MPa = design_pres / 10.0
+                S_MPa = material_stress[mat_safe]
+                OD_mm = pipe_database[nps_safe][sch_safe]["OD"]
+                WT_actual = pipe_database[nps_safe][sch_safe]["WT"]
+                
+                # ASME B31.3 Basitleştirilmiş
+                t_req = (P_MPa * OD_mm) / (2 * (S_MPa * 1.0 + P_MPa * 0.4))
+                t_min = t_req + 1.0 # +1mm korozyon
+                
+                safety_factor = WT_actual / t_min
+                is_safe = safety_factor >= 1.0
+                
+                st.session_state['res_safe'] = {
+                    "req": t_min, "act": WT_actual, "safe": is_safe, "sf": safety_factor
+                }
 
     with col_safe2:
-        if st.button("🛡️ RUN SAFETY ANALYSIS", type="primary", use_container_width=True):
-            # Parametreler
-            P_MPa = design_pres / 10.0 # Bar -> MPa
-            S_MPa = material_props[material_name]["stress"] # Malzeme dayanımı
-            OD_mm = pipe_database[nps_selected][sch_selected]["OD"]
-            WT_actual = pipe_database[nps_selected][sch_selected]["WT"]
+        if 'res_safe' in st.session_state:
+            res = st.session_state['res_safe']
+            st.subheader("Safety Report")
             
-            # Sabitler (Basitleştirilmiş)
-            E = 1.0 # Seamless Pipe assumed
-            Y = 0.4 # For Ferritic steels < 482 C
+            k1, k2 = st.columns(2)
+            k1.metric("Required Thickness", f"{res['req']:.2f} mm")
+            k2.metric("Actual Thickness", f"{res['act']:.2f} mm")
             
-            # Hesaplama: Gereken Minimum Et Kalınlığı
-            # t = (P * D) / (2 * (S*E + P*Y))
-            t_required = (P_MPa * OD_mm) / (2 * (S_MPa * E + P_MPa * Y))
-            
-            # Korozyon Payı (Corrosion Allowance - C)
-            C = 1.0 # 1 mm pay bırakalım
-            t_min_total = t_required + C
-            
-            # Güvenlik Kontrolü
-            safety_ratio = WT_actual / t_min_total
-            is_safe = safety_ratio >= 1.0
-            
-            # Sonuç Kartları
-            st.subheader("Analysis Result")
-            
-            m1, m2 = st.columns(2)
-            m1.metric("Required Thickness (w/ Corrosion)", f"{t_min_total:.2f} mm")
-            m2.metric("Actual Thickness (Selected)", f"{WT_actual:.2f} mm")
-            
-            # Görsel Gösterge (Gauge Chart benzeri)
-            st.write("### Safety Status")
-            if is_safe:
-                st.success(f"✅ SAFE! The pipe is strong enough. (Safety Factor: {safety_ratio:.2f})")
-                st.progress(min(safety_ratio/3, 1.0)) # Barı doldur
+            if res['safe']:
+                st.success(f"✅ SAFE! Pipe is strong enough. (Factor: {res['sf']:.2f})")
             else:
-                st.error(f"⚠️ UNSAFE! Pipe wall is too thin. Need at least {t_min_total:.2f} mm")
-                st.progress(min(safety_ratio/3, 1.0))
-
-            # Grafiksel Gösterim (Required vs Actual)
+                st.error(f"⚠️ UNSAFE! Pipe is too thin. Need > {res['req']:.2f} mm")
+                
             fig_safe = go.Figure()
-            fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[t_min_total, WT_actual], 
+            fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[res['req'], res['act']], 
                                      marker_color=['red', 'green']))
-            fig_safe.update_layout(title="Thickness Comparison", yaxis_title="Thickness (mm)")
             st.plotly_chart(fig_safe, use_container_width=True)
 
 # ==================================================
-# SAYFA 3: DATABASE & ANALYTICS
+# SAYFA 3: DATABASE
 # ==================================================
 elif page_selection == "📊 Project Database":
-    st.title("📊 Project Database & Analytics")
+    st.title("📊 Project Database")
     
     conn = sqlite3.connect("project_data.db")
     df = pd.read_sql("SELECT * FROM projects ORDER BY id DESC", conn)
     conn.close()
     
     if not df.empty:
-        col_db1, col_db2 = st.columns([2, 1])
-        
-        with col_db1:
-            st.subheader("Saved Calculations")
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Database (CSV)", csv, "database.csv", "text/csv")
-            
-        with col_db2:
-            st.subheader("Insights")
-            # Basit bir analiz grafiği: Çaplara göre Basınç Kaybı dağılımı
-            fig_stat = px.box(df, x="nps", y="pressure_drop", title="Pressure Drop Distribution by Size")
-            st.plotly_chart(fig_stat, use_container_width=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "projects.csv", "text/csv")
     else:
-        st.info("No data saved yet. Go to Calculator and save a project.")
+        st.info("Database is empty.")
