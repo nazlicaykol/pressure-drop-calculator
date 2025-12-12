@@ -39,9 +39,9 @@ def init_db():
 
 init_db()
 
-# --- 3. VERİTABANLARI ---
+# --- 3. VERİTABANLARI & SABİTLER ---
 
-# Module 1 İçin Basit Malzeme Listesi (Roughness Odaklı)
+# Malzeme Pürüzlülükleri
 material_list_roughness = {
     "Carbon Steel (New)": 0.045,
     "Carbon Steel (Corroded)": 0.5,
@@ -52,10 +52,9 @@ material_list_roughness = {
     "Galvanized Steel": 0.15
 }
 
-# Module 2 İçin GÜNCELLENMİŞ ASME B31.3 Malzeme Listesi (Stress Odaklı)
-# Değerler MPa cinsinden Allowable Stress (S) @ ~40°C
+# ASME Malzeme Dayanımları
 asme_material_data = {
-    "--- CARBON STEEL ---": 0, # Başlık (Seçilmemeli)
+    "--- CARBON STEEL ---": 0,
     "A106 Grade A": 110.0,
     "A106 Grade B": 138.0,
     "A106 Grade C": 161.0,
@@ -67,7 +66,6 @@ asme_material_data = {
     "API 5L X60 (L415)": 173.0,
     "API 5L X65 (L450)": 178.0,
     "A333 Grade 6 (Low Temp)": 138.0,
-    
     "--- STAINLESS STEEL ---": 0,
     "SS 304 (A312 TP304)": 138.0,
     "SS 304L (A312 TP304L)": 115.0,
@@ -75,7 +73,6 @@ asme_material_data = {
     "SS 316L (A312 TP316L)": 115.0,
     "SS 321 (A312 TP321)": 138.0,
     "SS 347 (A312 TP347)": 138.0,
-    
     "--- ALLOY STEEL ---": 0,
     "A335 P11 (1-1/4 Cr)": 126.0,
     "A335 P22 (2-1/4 Cr)": 126.0,
@@ -104,6 +101,42 @@ def get_ID(nps, sch):
         return d["OD"] - 2 * d["WT"]
     return None
 
+# --- ORTAK HESAPLAMA FONKSİYONU ---
+def calculate_hydraulics(temp_c, flow_th, press_bar, length_m, material, nps, sch):
+    try:
+        roughness = material_list_roughness.get(material, 0.045)
+        d_info = pipe_database[nps][sch]
+        ID_mm = d_info["OD"] - 2 * d_info["WT"]
+        ID_m = ID_mm / 1000.0
+        
+        T_K = temp_c + 273.15
+        P_Pa = press_bar * 100000
+        m_kg_s = flow_th * 1000 / 3600
+        
+        rho = PropsSI('D', 'T', T_K, 'P', P_Pa, 'Water')
+        mu = PropsSI('V', 'T', T_K, 'P', P_Pa, 'Water')
+        
+        Area = math.pi * (ID_m / 2)**2
+        velocity = m_kg_s / (rho * Area)
+        Re = (rho * velocity * ID_m) / mu
+        
+        if Re > 4000:
+            f = (-1.8 * math.log10((roughness/1000/ID_m/3.7)**1.11 + 6.9/Re))**-2
+        elif Re > 0:
+            f = 64 / Re
+        else:
+            f = 0
+            
+        dP_Pa = f * (length_m / ID_m) * (rho * velocity**2 / 2)
+        dP_bar = dP_Pa / 100000
+        
+        return {
+            "dp": dP_bar, "vel": velocity, "re": Re, "f": f,
+            "rho": rho, "mu": mu, "id_mm": ID_mm, "nps": nps
+        }
+    except Exception as e:
+        return None
+
 # ==================================================
 # SOL MENÜ (NAVİGASYON)
 # ==================================================
@@ -113,21 +146,25 @@ with st.sidebar:
     
     st.info("Select a module below to start.")
     
-    # SAYFA SEÇİMİ
+    # ARTIK 4 MODÜL VAR
     page_selection = st.radio(
         "Modules:",
-        ["🏠 Pressure Drop Calc", "🛡️ Wall Thickness Check", "📊 Project Database"]
+        [
+            "🏠 Pressure Drop Calc", 
+            "🛡️ Wall Thickness Check", 
+            "📈 Analytics & Simulation",  # Yeni Modül 3
+            "📚 Project History"          # Yeni Modül 4
+        ]
     )
     
     st.markdown("---")
-    st.caption("v3.1 | Engineering Tools") 
+    st.caption("v4.0 | Engineering Tools") 
 
 # ==================================================
 # SAYFA 1: PRESSURE DROP CALCULATOR
 # ==================================================
 if page_selection == "🏠 Pressure Drop Calc":
     st.title("💧 Pressure Drop Calculator")
-    st.markdown("Calculate head loss, velocity and flow properties.")
     
     col_input, col_result = st.columns([1, 1.2])
     
@@ -135,7 +172,6 @@ if page_selection == "🏠 Pressure Drop Calc":
         with st.container(border=True):
             st.header("1. Inputs")
             
-            st.subheader("Process Data")
             c1, c2 = st.columns(2)
             with c1:
                 temp = st.number_input("Temperature (°C)", 120.0, step=1.0)
@@ -145,9 +181,6 @@ if page_selection == "🏠 Pressure Drop Calc":
                 length = st.number_input("Length (m)", 5000.0, step=50.0)
 
             st.markdown("---")
-            st.subheader("Pipe & Material Selection")
-            
-            # Module 1 için Basit Malzeme Listesini Kullanıyoruz
             material_name = st.selectbox("Material", list(material_list_roughness.keys()))
             
             c3, c4 = st.columns(2)
@@ -157,93 +190,51 @@ if page_selection == "🏠 Pressure Drop Calc":
                 available_schedules = list(pipe_database[nps_selected].keys())
                 sch_selected = st.selectbox("Schedule (Thickness)", available_schedules)
             
-            current_ID = get_ID(nps_selected, sch_selected)
-            d_info = pipe_database[nps_selected][sch_selected]
-            st.info(f"📋 Info: OD {d_info['OD']} mm | WT {d_info['WT']} mm | ID {current_ID:.2f} mm")
-            
             project_name = st.text_input("Project Name (Optional)", "My-Calculation-01")
 
             if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
-                roughness = material_list_roughness[material_name]
-                ID_mm = current_ID
-                T_K = temp + 273.15
-                P_Pa = pressure * 100000
-                m_kg_s = flow * 1000 / 3600
-                ID_m = ID_mm / 1000
+                res = calculate_hydraulics(temp, flow, pressure, length, material_name, nps_selected, sch_selected)
                 
-                try:
-                    rho = PropsSI('D', 'T', T_K, 'P', P_Pa, 'Water')
-                    mu = PropsSI('V', 'T', T_K, 'P', P_Pa, 'Water')
-                    Area = math.pi * (ID_m / 2)**2
-                    velocity = m_kg_s / (rho * Area)
-                    Re = (rho * velocity * ID_m) / mu
-                    
-                    if Re > 4000:
-                        f = (-1.8 * math.log10((roughness/1000/ID_m/3.7)**1.11 + 6.9/Re))**-2
-                    elif Re > 0:
-                        f = 64 / Re
-                    else:
-                        f = 0
-                        
-                    dP_Pa = f * (length / ID_m) * (rho * velocity**2 / 2)
-                    dP_bar = dP_Pa / 100000
-                    
-                    st.session_state['res_dp'] = {
-                        "dp": dP_bar, "vel": velocity, "re": Re, "f": f,
-                        "rho": rho, "mu": mu
-                    }
-                    
+                if res:
+                    st.session_state['res_dp'] = res
                     conn = sqlite3.connect(DB_FILE)
                     cur = conn.cursor()
                     cur.execute("INSERT INTO projects (name, material, nps, sch, pressure_drop, velocity) VALUES (?,?,?,?,?,?)", 
-                                (project_name, material_name, nps_selected, sch_selected, dP_bar, velocity))
+                                (project_name, material_name, nps_selected, sch_selected, res['dp'], res['vel']))
                     conn.commit()
                     conn.close()
                     st.toast("Calculation saved!", icon="✅")
-                    
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                else:
+                    st.error("Calculation Error! Check inputs.")
 
     with col_result:
         if 'res_dp' in st.session_state:
             res = st.session_state['res_dp']
             st.header("2. Results")
-            
             with st.container(border=True):
                 m1, m2 = st.columns(2)
                 m1.metric("Pressure Drop", f"{res['dp']:.4f} bar", delta_color="inverse")
                 m2.metric("Flow Velocity", f"{res['vel']:.2f} m/s")
-                
                 m3, m4 = st.columns(2)
                 m3.metric("Reynolds No", f"{res['re']:.0f}")
                 m4.metric("Friction Factor (f)", f"{res['f']:.5f}")
-            
-            st.subheader("Detailed Properties")
-            st.write(f"Density: **{res['rho']:.2f} kg/m³**")
-            st.write(f"Viscosity: **{res['mu']:.6f} Pa.s**")
         else:
             st.info("👈 Please enter data and click Calculate.")
 
 # ==================================================
-# SAYFA 2: WALL THICKNESS SAFETY CHECK (GÜNCELLENDİ)
+# SAYFA 2: WALL THICKNESS SAFETY CHECK
 # ==================================================
 elif page_selection == "🛡️ Wall Thickness Check":
     st.title("🛡️ Wall Thickness Check")
-    st.markdown("ASME B31.3 Table A-1 based safety verification.")
     
     col_safe1, col_safe2 = st.columns([1, 1])
     
     with col_safe1:
         with st.container(border=True):
             st.subheader("Design Parameters")
-            
-            # --- YENİ ASME MALZEME LİSTESİ ---
-            # Kullanıcının yanlışlıkla başlığı seçmesini engellemek için filtreleyelim
             selectable_materials = [k for k,v in asme_material_data.items() if v > 0]
-            
             mat_safe = st.selectbox("ASME Material Spec", selectable_materials, index=1, key="safe_mat")
-            
-            st.caption(f"Allowable Stress (S) for {mat_safe}: **{asme_material_data[mat_safe]} MPa**")
+            st.caption(f"Allowable Stress (S): **{asme_material_data[mat_safe]} MPa**")
             
             c_s1, c_s2 = st.columns(2)
             with c_s1:
@@ -255,68 +246,143 @@ elif page_selection == "🛡️ Wall Thickness Check":
             
             if st.button("🛡️ CHECK SAFETY", type="primary", use_container_width=True):
                 P_MPa = design_pres / 10.0
-                
-                # Yeni listeden stresi alıyoruz
                 S_MPa = asme_material_data[mat_safe]
-                
-                # Boru datası
                 OD_mm = pipe_database[nps_safe][sch_safe]["OD"]
                 WT_actual = pipe_database[nps_safe][sch_safe]["WT"]
                 
-                # ASME B31.3 Kalınlık Hesabı
-                # t = (P * D) / (2 * (S * E + P * Y))
-                # Basitleştirilmiş: E=1.0 (Seamless), Y=0.4 (Ferritic < 482C)
-                E = 1.0 
-                Y = 0.4
-                
-                t_req = (P_MPa * OD_mm) / (2 * (S_MPa * E + P_MPa * Y))
-                t_min = t_req + 1.0 # Corrosion Allowance (1mm)
-                
+                t_req = (P_MPa * OD_mm) / (2 * (S_MPa * 1.0 + P_MPa * 0.4))
+                t_min = t_req + 1.0 
                 safety_factor = WT_actual / t_min
                 is_safe = safety_factor >= 1.0
                 
                 st.session_state['res_safe'] = {
-                    "req": t_min, "act": WT_actual, "safe": is_safe, "sf": safety_factor,
-                    "mat": mat_safe
+                    "req": t_min, "act": WT_actual, "safe": is_safe, "sf": safety_factor, "mat": mat_safe
                 }
 
     with col_safe2:
         if 'res_safe' in st.session_state:
             res = st.session_state['res_safe']
-            st.subheader(f"Results for {res['mat']}")
-            
+            st.subheader(f"Result: {res['mat']}")
             k1, k2 = st.columns(2)
-            k1.metric("Required Thickness (inc. CA)", f"{res['req']:.2f} mm")
-            k2.metric("Actual Thickness", f"{res['act']:.2f} mm")
+            k1.metric("Required", f"{res['req']:.2f} mm")
+            k2.metric("Actual", f"{res['act']:.2f} mm")
             
             if res['safe']:
-                st.success(f"✅ SAFE! Pipe is strong enough. (Factor: {res['sf']:.2f})")
+                st.success(f"✅ SAFE! Factor: {res['sf']:.2f}")
             else:
-                st.error(f"⚠️ UNSAFE! Pipe is too thin. Need > {res['req']:.2f} mm")
+                st.error(f"⚠️ UNSAFE! Need > {res['req']:.2f} mm")
                 
-            # Görselleştirme 
             fig_safe = go.Figure()
-            fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[res['req'], res['act']], 
-                                     marker_color=['#FF4B4B', '#00CC96'],
-                                     text=[f"{res['req']:.2f}mm", f"{res['act']:.2f}mm"],
-                                     textposition='auto'))
-            
-            fig_safe.update_layout(title_text="Thickness Comparison", template="plotly_white")
+            fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[res['req'], res['act']], marker_color=['#FF4B4B', '#00CC96']))
             st.plotly_chart(fig_safe, use_container_width=True)
 
 # ==================================================
-# SAYFA 3: DATABASE
+# SAYFA 3: ANALYTICS & SIMULATION (GRAFİK MERKEZİ)
 # ==================================================
-elif page_selection == "📊 Project Database":
-    st.title("📊 Project Database")
+elif page_selection == "📈 Analytics & Simulation":
+    st.title("📈 Analytics & Simulation Hub")
+    
+    # Sekmeler: Biri simülasyon, biri geçmiş veri grafikleri
+    tab_sim, tab_hist = st.tabs(["⚡ Live Simulation", "📊 Historical Charts"])
+    
+    # --- 1. CANLI SİMÜLASYON ---
+    with tab_sim:
+        st.subheader("Hydraulic Performance Simulator")
+        st.markdown("Compare all pipe sizes instantly.")
+        
+        with st.container(border=True):
+            col_sim1, col_sim2, col_sim3 = st.columns(3)
+            with col_sim1:
+                sim_flow = st.number_input("Flow Rate (t/h)", 100.0, step=10.0, key="sim_flow")
+                sim_mat = st.selectbox("Material", list(material_list_roughness.keys()), key="sim_mat")
+            with col_sim2:
+                sim_pres = st.number_input("Pressure (bar)", 40.0, key="sim_pres")
+                sim_temp = st.number_input("Temp (°C)", 120.0, key="sim_temp")
+            with col_sim3:
+                sim_len = st.number_input("Length (m)", 1000.0, step=100.0, key="sim_len")
+                btn_simulate = st.button("🔄 RUN SIMULATION", type="primary", use_container_width=True)
+        
+        if btn_simulate:
+            results_list = []
+            for size_name, schedules in pipe_database.items():
+                sch_to_use = "40" if "40" in schedules else list(schedules.keys())[0]
+                res = calculate_hydraulics(sim_temp, sim_flow, sim_pres, sim_len, sim_mat, size_name, sch_to_use)
+                if res:
+                    results_list.append({
+                        "NPS": size_name, "ID (mm)": res['id_mm'],
+                        "Velocity (m/s)": res['vel'], "Pressure Drop (bar)": res['dp']
+                    })
+            
+            df_sim = pd.DataFrame(results_list)
+            
+            c_chart, c_tbl = st.columns([1.5, 1])
+            with c_chart:
+                fig_sim = px.scatter(df_sim, x="Velocity (m/s)", y="Pressure Drop (bar)",
+                                     color="NPS", size="ID (mm)", size_max=40,
+                                     text="NPS", title="Velocity vs Pressure Drop Trade-off")
+                fig_sim.update_traces(textposition='top center')
+                st.plotly_chart(fig_sim, use_container_width=True)
+            with c_tbl:
+                st.dataframe(df_sim.sort_values("Velocity (m/s)", ascending=False), hide_index=True, use_container_width=True)
+
+    # --- 2. GEÇMİŞ VERİ GRAFİKLERİ ---
+    with tab_hist:
+        conn = sqlite3.connect(DB_FILE)
+        df_hist = pd.read_sql("SELECT * FROM projects", conn)
+        conn.close()
+        
+        if not df_hist.empty:
+            st.subheader("Historical Data Analysis")
+            col_h1, col_h2 = st.columns(2)
+            
+            with col_h1:
+                st.caption("Commonly Used Materials")
+                fig_pie = px.pie(df_hist, names='material', hole=0.4)
+                st.plotly_chart(fig_pie, use_container_width=True)
+                
+            with col_h2:
+                st.caption("Calculated Velocities Overview")
+                fig_hist = px.histogram(df_hist, x="velocity", nbins=10, title="Velocity Distribution")
+                st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            st.info("No historical data available yet.")
+
+# ==================================================
+# SAYFA 4: PROJECT HISTORY (SADECE VERİ)
+# ==================================================
+elif page_selection == "📚 Project History":
+    st.title("📚 Project History")
+    st.markdown("Access your full calculation database here.")
     
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql("SELECT * FROM projects ORDER BY id DESC", conn)
     conn.close()
     
     if not df.empty:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        # Arama Filtresi
+        search_term = st.text_input("🔍 Search by Project Name or Material", "")
+        if search_term:
+            df = df[df['name'].str.contains(search_term, case=False) | df['material'].str.contains(search_term, case=False)]
+        
+        st.dataframe(
+            df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "timestamp": st.column_config.DatetimeColumn("Date", format="D MMM YYYY, HH:mm"),
+                "pressure_drop": st.column_config.NumberColumn("dP (bar)", format="%.4f"),
+                "velocity": st.column_config.NumberColumn("Vel (m/s)", format="%.2f"),
+            }
+        )
+        
+        st.markdown("---")
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download CSV", csv, "projects.csv", "text/csv")
+        st.download_button(
+            label="📥 Download Full Database as CSV",
+            data=csv,
+            file_name="project_history_export.csv",
+            mime="text/csv",
+            type="primary"
+        )
     else:
-        st.info("Database is empty.")
+        st.warning("Database is empty. No records found.")
