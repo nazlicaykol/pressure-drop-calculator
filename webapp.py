@@ -39,10 +39,10 @@ init_db()
 # --- 3. VERİTABANLARI (GENİŞLETİLMİŞ) ---
 # Malzeme Pürüzlülüğü (mm) ve İzin Verilen Gerilme (Allowable Stress - MPa) [Yaklaşık Değerler]
 material_props = {
-    "Carbon Steel (A106 Gr.B)": {"roughness": 0.045, "stress": 138.0},  # ~20,000 psi
-    "Stainless Steel (A312 TP304)": {"roughness": 0.015, "stress": 115.0}, # ~16,700 psi
-    "PVC (Sch 40/80)": {"roughness": 0.0015, "stress": 14.0},       # ~2,000 psi
-    "Copper (B88)": {"roughness": 0.0015, "stress": 41.0},          # ~6,000 psi
+    "Carbon Steel ": {"roughness": 0.045, "stress": 138.0},  # ~20,000 psi
+    "Stainless Steel ": {"roughness": 0.015, "stress": 115.0}, # ~16,700 psi
+    "PVC ": {"roughness": 0.0015, "stress": 14.0},       # ~2,000 psi
+    "Copper ": {"roughness": 0.0015, "stress": 41.0},          # ~6,000 psi
     "Galvanized Steel": {"roughness": 0.15, "stress": 138.0}
 }
 
@@ -73,48 +73,63 @@ with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3093/3093409.png", width=80)
     st.title("HydraulicSuite Pro")
     
-    # SAYFA SEÇİMİ (NAVIGASYON)
+    st.info("Select a module below to start.")
+    
+    # SAYFA SEÇİMİ
     page_selection = st.radio(
-        "Go to Module:",
+        "Modules:",
         ["🏠 Pressure Drop Calc", "🛡️ Wall Thickness Check", "📊 Project Database"]
     )
+    
     st.markdown("---")
-    
-    # Global Girdiler (Tüm sayfalarda kullanılabilir)
-    st.write("🔧 **Quick Settings**")
-    material_name = st.selectbox("Material", list(material_props.keys()))
-    nps_selected = st.selectbox("Nominal Size (NPS)", list(pipe_database.keys()), index=6)
-    
-    available_schedules = list(pipe_database[nps_selected].keys())
-    sch_selected = st.selectbox("Schedule", available_schedules)
-    
-    current_ID = get_ID(nps_selected, sch_selected)
-    d_info = pipe_database[nps_selected][sch_selected]
-    
-    st.info(f"OD: {d_info['OD']} mm | WT: {d_info['WT']} mm")
-    st.caption("v2.1 | ASME B31.3 Compliant")
+    st.caption("v3.0 | Müh. Nazlıcan Aykol"))
 
 # ==================================================
 # SAYFA 1: PRESSURE DROP CALCULATOR (MEVCUT SİSTEM)
 # ==================================================
 if page_selection == "🏠 Pressure Drop Calc":
     st.title("💧 Pressure Drop Calculator")
-    st.markdown("Calculate head loss in pipes using Darcy-Weisbach equation.")
+    st.markdown("Calculate head loss, velocity and flow properties.")
     
-    col1, col2 = st.columns(2)
-    with col1:
+    # Ekranı ikiye bölelim: Girdiler (Sol) - Sonuçlar (Sağ)
+    col_input, col_result = st.columns([1, 1.2])
+    
+    with col_input:
         with st.container(border=True):
-            st.subheader("Process Inputs")
-            temp = st.number_input("Temperature (°C)", 120.0, step=1.0)
-            pressure = st.number_input("Pressure (bar)", 40.0, step=1.0)
-            flow = st.number_input("Mass Flow (t/h)", 100.0, step=10.0)
-            length = st.number_input("Length (m)", 5000.0, step=50.0)
+            st.header("1. Inputs")
             
-    with col2:
-        with st.container(border=True):
-            st.subheader("Results Dashboard")
-            if st.button("🚀 CALCULATE PRESSURE DROP", type="primary", use_container_width=True):
-                roughness = material_props[material_name]["roughness"]
+            st.subheader("Process Data")
+            c1, c2 = st.columns(2)
+            with c1:
+                temp = st.number_input("Temperature (°C)", 120.0, step=1.0)
+                flow = st.number_input("Mass Flow (t/h)", 100.0, step=10.0)
+            with c2:
+                pressure = st.number_input("Pressure (bar)", 40.0, step=1.0)
+                length = st.number_input("Length (m)", 5000.0, step=50.0)
+
+            st.markdown("---")
+            st.subheader("Pipe & Material Selection")
+            
+            # --- YENİ EKLENEN KISIM: Girdiler Artık Burada ---
+            material_name = st.selectbox("Material", list(material_list.keys()))
+            
+            c3, c4 = st.columns(2)
+            with c3:
+                nps_selected = st.selectbox("Nominal Size (Inch)", list(pipe_database.keys()), index=6) # 4 inch default
+            with c4:
+                available_schedules = list(pipe_database[nps_selected].keys())
+                sch_selected = st.selectbox("Schedule (Thickness)", available_schedules)
+            
+            # Seçilen boru bilgisini anlık göster
+            current_ID = get_ID(nps_selected, sch_selected)
+            d_info = pipe_database[nps_selected][sch_selected]
+            st.info(f"📋 Pipe Info: OD {d_info['OD']} mm | WT {d_info['WT']} mm | ID {current_ID:.2f} mm")
+            
+            project_name = st.text_input("Project Name (Optional)", "My-Calculation-01")
+
+            if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
+                # Hesaplama Motoru
+                roughness = material_list[material_name]
                 ID_mm = current_ID
                 T_K = temp + 273.15
                 P_Pa = pressure * 100000
@@ -138,25 +153,47 @@ if page_selection == "🏠 Pressure Drop Calc":
                     dP_Pa = f * (length / ID_m) * (rho * velocity**2 / 2)
                     dP_bar = dP_Pa / 100000
                     
-                    # Sonuçlar
-                    c1, c2 = st.columns(2)
-                    c1.metric("Pressure Drop", f"{dP_bar:.4f} bar", delta_color="inverse")
-                    c2.metric("Velocity", f"{velocity:.2f} m/s")
-                    st.metric("Reynolds Number", f"{Re:.0f}")
+                    # Session State'e Kaydet
+                    st.session_state['res_dp'] = {
+                        "dp": dP_bar, "vel": velocity, "re": Re, "f": f,
+                        "rho": rho, "mu": mu
+                    }
                     
-                    # Veritabanına Yaz
+                    # Veritabanına Kaydet
                     conn = sqlite3.connect("project_data.db")
                     cur = conn.cursor()
                     cur.execute("INSERT INTO projects (name, material, nps, sch, pressure_drop, velocity) VALUES (?,?,?,?,?,?)", 
-                                ("Pressure Calc", material_name, nps_selected, sch_selected, dP_bar, velocity))
+                                (project_name, material_name, nps_selected, sch_selected, dP_bar, velocity))
                     conn.commit()
                     conn.close()
-                    st.toast("Result saved to database!")
+                    st.toast("Calculation saved!", icon="✅")
                     
                 except Exception as e:
                     st.error(f"Error: {e}")
-            else:
-                st.info("Click the button to start calculation.")
+
+    with col_result:
+        # Sonuçlar sağ tarafta görünecek
+        if 'res_dp' in st.session_state:
+            res = st.session_state['res_dp']
+            st.header("2. Results")
+            
+            with st.container(border=True):
+                m1, m2 = st.columns(2)
+                m1.metric("Pressure Drop", f"{res['dp']:.4f} bar", delta_color="inverse")
+                m2.metric("Flow Velocity", f"{res['vel']:.2f} m/s")
+                
+                m3, m4 = st.columns(2)
+                m3.metric("Reynolds No", f"{res['re']:.0f}")
+                m4.metric("Friction Factor (f)", f"{res['f']:.5f}")
+            
+            st.subheader("Detailed Properties")
+            st.write(f"Density: **{res['rho']:.2f} kg/m³**")
+            st.write(f"Viscosity: **{res['mu']:.6f} Pa.s**")
+            
+            # Grafik (Hız vs Basınç Kaybı gibi bir görsel eklenebilir)
+            st.caption("Calculation based on Darcy-Weisbach & Colebrook-White equations.")
+        else:
+            st.info("👈 Please enter data and click Calculate.")
 
 # ==================================================
 # SAYFA 2: WALL THICKNESS SAFETY CHECK (YENİ MODÜL!)
