@@ -14,16 +14,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- VERİTABANI DOSYA ADI (TEK MERKEZDEN YÖNETİM) ---
+# Burayı değiştirdiğimizde kodun her yeri otomatik güncellenir.
+DB_FILE = "project_data_final.db"
+
 # --- 2. DATABASE KURULUMU ---
 def init_db():
-    # Dosya ismini değiştirdik (v2 yaptık), böylece sıfırdan yeni bir dosya oluşacak
-    conn = sqlite3.connect("project_data_v2.db") 
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # GARANTİ ÇÖZÜM: Eğer tablo varsa önce siliyoruz (Eski hatalı tablo gitsin)
-    # Not: Bu işlem eski kayıtlarını siler ama hatayı kesin çözer.
-    # Eğer içindeki veriler önemliyse bu satırı (DROP TABLE) kullanma, sadece dosya adını değiştir.
-    cursor.execute("DROP TABLE IF EXISTS projects")
+    # Not: Daha önceki 'DROP TABLE' komutunu kaldırdım çünkü 
+    # Streamlit her buton tıklamasında kodu baştan çalıştırır. 
+    # DROP komutu açık kalırsa verilerin her seferinde silinir.
+    # Dosya adını değiştirdiğimiz için (final.db) zaten sıfırdan oluşacak.
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS projects (
@@ -32,7 +35,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             material TEXT,
             nps TEXT,
-            sch TEXT,  -- İşte eksik olan sütun burası
+            sch TEXT,
             pressure_drop REAL,
             velocity REAL,
             safety_factor REAL
@@ -41,6 +44,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Uygulama başladığında veritabanını kontrol et
 init_db()
 
 # --- 3. VERİTABANLARI ---
@@ -174,8 +178,8 @@ if page_selection == "🏠 Pressure Drop Calc":
                         "rho": rho, "mu": mu
                     }
                     
-                    # Veritabanına Kaydet
-                    conn = sqlite3.connect("project_data.db")
+                    # Veritabanına Kaydet (GÜNCELLENDİ)
+                    conn = sqlite3.connect(DB_FILE) # Artık global değişkeni kullanıyoruz
                     cur = conn.cursor()
                     cur.execute("INSERT INTO projects (name, material, nps, sch, pressure_drop, velocity) VALUES (?,?,?,?,?,?)", 
                                 (project_name, material_name, nps_selected, sch_selected, dP_bar, velocity))
@@ -272,7 +276,8 @@ elif page_selection == "🛡️ Wall Thickness Check":
 elif page_selection == "📊 Project Database":
     st.title("📊 Project Database")
     
-    conn = sqlite3.connect("project_data.db")
+    # Veritabanı Okuma (GÜNCELLENDİ)
+    conn = sqlite3.connect(DB_FILE) # Artık global değişkeni kullanıyoruz
     df = pd.read_sql("SELECT * FROM projects ORDER BY id DESC", conn)
     conn.close()
     
