@@ -186,7 +186,7 @@ if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
         st.success("Calculation Completed Successfully!")
         
         res1, res2, res3, res4 = st.columns(4)
-        res1.metric("Pressure Drop", f"{dP_bar:.4f} bar", delta_color="inverse")
+        res1.metric("Pressure Drop", f"{dP_bar:.1f} bar", delta_color="inverse")
         res2.metric("Flow Velocity", f"{velocity:.2f} m/s")
         res3.metric("Reynolds Number", f"{Re:.0f}")
         res4.metric("Friction Factor", f"{f:.5f}")
@@ -198,3 +198,4 @@ if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
 
     except Exception as e:
         st.error(f"Calculation Error: {e}")
+
