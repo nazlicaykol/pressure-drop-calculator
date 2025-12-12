@@ -2,52 +2,133 @@ import streamlit as st
 from CoolProp.CoolProp import PropsSI
 import math
 
-# Sayfa Başlığı
-st.title("💧 Basınç Kaybı Hesaplayıcı ")
-
-# Sidebar (Sol Menü) - Girdiler buraya
-st.sidebar.header("Input")
-
-# Tkinter'daki Entry -> st.number_input
-temp = st.sidebar.number_input("Sıcaklık (°C)", value=120.0)
-pressure = st.sidebar.number_input("Basınç (bar)", value=40.0)
-flow = st.sidebar.number_input("Kütlesel Debi (t/h)", value=100.0)
-length = st.sidebar.number_input("Boru Uzunluğu (m)", value=5000.0)
-
-# Tkinter'daki Combobox -> st.selectbox
-material = st.sidebar.selectbox(
-    "Malzeme Seçin",
-    ["carbon steel", "stainless steel", "copper", "PVC"]
+# --- 1. SAYFA AYARLARI ---
+st.set_page_config(
+    page_title="HydraulicCalc Pro",
+    page_icon="⚙️",
+    layout="centered", # 'wide' yerine 'centered' yaptım, form gibi ortada dursun
+    initial_sidebar_state="collapsed"
 )
 
-# Hesaplama Butonu
-if st.button("HESAPLA"):
-    # --- Senin Mühendislik Kodların Burada Çalışacak ---
-    # Arka plandaki matematik AYNI kalıyor!
+# --- 2. VERİTABANI (Sözlükler) ---
+# Malzeme Pürüzlülükleri (mm)
+material_list = {
+    "Karbon Çelik (Carbon Steel)": 0.045,
+    "Paslanmaz Çelik (Stainless Steel)": 0.0015,
+    "Bakır (Copper)": 0.0015,
+    "PVC": 0.0015,
+    "Beton (Concrete)": 0.01,
+    "Galvanizli Çelik": 0.15
+}
+
+# Boru Çapları Veritabanı (Örnek veriler)
+pipe_database = {
+    "1/2 inch": {"40": {"OD": 21.3, "WT": 2.77}, "80": {"OD": 21.3, "WT": 3.73}},
+    "1 inch":   {"40": {"OD": 33.4, "WT": 3.38}, "80": {"OD": 33.4, "WT": 4.55}},
+    "2 inch":   {"40": {"OD": 60.3, "WT": 3.91}, "80": {"OD": 60.3, "WT": 5.54}},
+    "3 inch":   {"40": {"OD": 88.9, "WT": 5.49}, "80": {"OD": 88.9, "WT": 7.62}},
+    "4 inch":   {"40": {"OD": 114.3, "WT": 6.02}, "80": {"OD": 114.3, "WT": 8.56}},
+    "6 inch":   {"40": {"OD": 168.3, "WT": 7.11}, "80": {"OD": 168.3, "WT": 10.97}},
+    "8 inch":   {"40": {"OD": 219.1, "WT": 8.18}, "80": {"OD": 219.1, "WT": 12.70}},
+    "10 inch":  {"40": {"OD": 273.0, "WT": 9.27}, "80": {"OD": 273.0, "WT": 15.09}},
+    "12 inch":  {"STD": {"OD": 323.8, "WT": 9.53}, "XS": {"OD": 323.8, "WT": 12.70}}
+}
+
+# Yardımcı Fonksiyon: İç Çap Bulucu
+def get_ID(nps, sch):
+    if nps in pipe_database and sch in pipe_database[nps]:
+        d = pipe_database[nps][sch]
+        return d["OD"] - 2 * d["WT"]
+    return None
+
+# --- 3. ARAYÜZ TASARIMI (GİRDİLER) ---
+st.title("💧 Basınç Kaybı Hesaplayıcı")
+st.markdown("---") # Çizgi çeker
+
+st.subheader("1. Proses Verileri")
+# Girdileri yan yana 2 kolona bölüyoruz
+col1, col2 = st.columns(2)
+
+with col1:
+    temp = st.number_input("Sıcaklık (°C)", value=120.0, step=1.0)
+    flow = st.number_input("Kütlesel Debi (t/h)", value=100.0, step=10.0)
+
+with col2:
+    pressure = st.number_input("Basınç (bar)", value=40.0, step=1.0)
+    length = st.number_input("Boru Uzunluğu (m)", value=5000.0, step=50.0)
+
+st.subheader("2. Boru Özellikleri")
+col3, col4 = st.columns(2)
+
+with col3:
+    material_name = st.selectbox("Malzeme Seçin", list(material_list.keys()))
+    # Seçilen NPS'ye göre Schedule listesini güncellemek için önce NPS'yi alıyoruz
+    nps_selected = st.selectbox("Nominal Çap (NPS)", list(pipe_database.keys()), index=4) # Varsayılan 4 inch
+
+with col4:
+    # Schedule kutusu, seçilen çapa göre otomatik doluyor
+    available_schedules = list(pipe_database[nps_selected].keys())
+    sch_selected = st.selectbox("Schedule (Et Kalınlığı)", available_schedules)
     
-    # 1. Birim Çevirme
+    # Bilgi amaçlı seçilen boruyu gösterelim
+    current_ID = get_ID(nps_selected, sch_selected)
+    st.info(f"Seçilen Boru İç Çapı: **{current_ID:.2f} mm**")
+
+# --- 4. HESAPLAMA MOTORU ---
+st.markdown("---")
+# Butonu ortalamak için boş kolonlar kullanabiliriz veya direkt basabiliriz
+if st.button("🚀 HESAPLA", type="primary", use_container_width=True):
+    
+    # Verileri Hazırla
+    roughness = material_list[material_name]
+    ID_mm = current_ID
+    
+    # Fiziksel Dönüşümler
     T_kelvin = temp + 273.15
     P_pascal = pressure * 100000
+    m_dot_kg_s = flow * 1000 / 3600
+    ID_m = ID_mm / 1000
     
-    # 2. CoolProp Çağırma
     try:
-        rho = PropsSI('D', 'T', T_kelvin, 'P', P_pascal, 'Water')
-        visc = PropsSI('V', 'T', T_kelvin, 'P', P_pascal, 'Water')
+        # CoolProp ile Özellikleri Çek
+        rho = PropsSI('D', 'T', T_kelvin, 'P', P_pascal, 'Water') # Yoğunluk
+        mu = PropsSI('V', 'T', T_kelvin, 'P', P_pascal, 'Water')  # Viskozite
         
-        # 3. Sonuçları Ekrana Yazma
-        st.success("Hesaplama Başarılı!")
+        # Hidrolik Hesaplar
+        Area = math.pi * (ID_m / 2)**2
+        velocity = m_dot_kg_s / (rho * Area)
+        Re = (rho * velocity * ID_m) / mu
         
-        # Sonuçları sütunlar halinde gösterelim
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.metric("Yoğunluk (kg/m³)", f"{rho:.2f}")
-        with col2:
-            st.metric("Viskozite (Pa.s)", f"{visc:.6f}")
+        # Sürtünme Faktörü (Colebrook-White Yaklaşımı)
+        if Re > 4000:
+            # Türbülanslı Akış
+            f = (-1.8 * math.log10((roughness/1000/ID_m/3.7)**1.11 + 6.9/Re))**-2
+        elif Re > 0:
+            # Laminar Akış
+            f = 64 / Re
+        else:
+            f = 0
             
-    except Exception as e:
-        st.error(f"Bir hata oluştu: {e}")
-            
-    except Exception as e:
+        # Basınç Kaybı (Darcy-Weisbach)
+        dP_pascal = f * (length / ID_m) * (rho * velocity**2 / 2)
+        dP_bar = dP_pascal / 100000
+        
+        # --- SONUÇLARI GÖSTER ---
+        st.success("Hesaplama Başarıyla Tamamlandı!")
+        
+        # Sonuçları 4'lü kartlar halinde gösterelim
+        res1, res2, res3, res4 = st.columns(4)
+        
+        res1.metric("Basınç Kaybı", f"{dP_bar:.4f} bar", delta_color="inverse")
+        res2.metric("Akış Hızı", f"{velocity:.2f} m/s")
+        res3.metric("Reynolds Sayısı", f"{Re:.0f}")
+        res4.metric("Sürtünme Faktörü", f"{f:.5f}")
+        
+        # Detaylar için genişletilebilir alan
+        with st.expander("Detaylı Akışkan Özellikleri"):
+            st.write(f"- **Yoğunluk:** {rho:.2f} kg/m³")
+            st.write(f"- **Viskozite:** {mu:.6f} Pa.s")
+            st.write(f"- **Akış Alanı:** {Area:.6f} m²")
 
-        st.error(f"Bir hata oluştu: {e}")
+    except Exception as e:
+        st.error(f"Hesaplama Hatası: {e}")
