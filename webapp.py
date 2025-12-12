@@ -54,8 +54,8 @@ with col1:
     flow = st.number_input("Mass Flow Rate (t/h)", value=100.0, step=10.0)
 
 with col2:
-    pressure = st.number_input("Basınç (bar)", value=40.0, step=1.0)
-    length = st.number_input("Boru Uzunluğu (m)", value=5000.0, step=50.0)
+    pressure = st.number_input("Pressure (bar)", value=40.0, step=1.0)
+    length = st.number_input("Length of Pipe (m)", value=5000.0, step=50.0)
 
 st.subheader("2. Pipe Specifications")
 col3, col4 = st.columns(2)
