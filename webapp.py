@@ -119,7 +119,7 @@ if st.button("🚀 HESAPLA", type="primary", use_container_width=True):
         # Sonuçları 4'lü kartlar halinde gösterelim
         res1, res2, res3, res4 = st.columns(4)
         
-        res1.metric("Basınç Kaybı", f"{dP_bar:.4f} bar", delta_color="inverse")
+        res1.metric("Basınç Kaybı", f"{dP_bar:.1f} bar", delta_color="inverse")
         res2.metric("Akış Hızı", f"{velocity:.2f} m/s")
         res3.metric("Reynolds Sayısı", f"{Re:.0f}")
         res4.metric("Sürtünme Faktörü", f"{f:.5f}")
