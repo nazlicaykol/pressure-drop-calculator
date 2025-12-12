@@ -52,7 +52,6 @@ material_list_roughness = {
 }
 
 # Fitting Eşdeğer Uzunluk Katsayıları (Le/D)
-# Kaynak: Crane Technical Paper 410
 fitting_led_database = {
     "Elbow 90° (Standard Radius)": 30,
     "Elbow 90° (Long Radius)": 20,
@@ -154,20 +153,16 @@ def calculate_hydraulics(temp_c, flow_th, press_bar, length_m, fitting_len_m, el
         else:
             f = 0
             
-        # Toplam eşdeğer uzunluk (Boru + Fittingler)
         total_effective_length = length_m + fitting_len_m
         dP_friction_Pa = f * (total_effective_length / ID_m) * (rho * velocity**2 / 2)
         
-        # Statik Yük (Elevation)
         g = 9.81
         dP_static_Pa = rho * g * elevation_m
         dP_total_Pa = dP_friction_Pa + dP_static_Pa
         dP_total_bar = dP_total_Pa / 100000
         
-        # Pompa Yükü (mSS)
         head_m = dP_total_Pa / (rho * g)
         
-        # Hidrolik Güç
         flow_m3_h = flow_th / (rho / 1000) 
         power_hydraulic_kW = (flow_m3_h * head_m * rho * g) / (3.6 * 1e6)
         
@@ -177,7 +172,7 @@ def calculate_hydraulics(temp_c, flow_th, press_bar, length_m, fitting_len_m, el
         return {
             "dp_total": dP_total_bar, 
             "dp_friction": dP_friction_Pa/100000,
-            "dp_static": dP_static_Pa/100000, # Bar cinsinden statik
+            "dp_static": dP_static_Pa/100000, 
             "head_m": head_m,
             "vel": velocity, 
             "re": Re, "f": f,
@@ -207,7 +202,7 @@ with st.sidebar:
         ]
     )
     st.markdown("---")
-    st.caption("v5.1 | Engineering Tools") 
+    st.caption("v5.2 | Engineering Tools") 
 
 # ==================================================
 # SAYFA 1: PRESSURE DROP CALCULATOR (GELİŞMİŞ)
@@ -221,7 +216,7 @@ if page_selection == "🏠 Pressure Drop Calc":
         with st.container(border=True):
             st.header("1. Design Inputs")
             
-            # --- Boru ve Malzeme Seçimi (Önce bunu alıyoruz ki çap belli olsun) ---
+            # --- Boru ve Malzeme Seçimi ---
             st.subheader("🛠️ Pipe & Material")
             material_name = st.selectbox("Material", list(material_list_roughness.keys()))
             
@@ -232,7 +227,7 @@ if page_selection == "🏠 Pressure Drop Calc":
                 available_schedules = list(pipe_database[nps_selected].keys())
                 sch_selected = st.selectbox("Schedule", available_schedules)
             
-            # Seçilen borunun ID'sini hemen alalım (Hesap için lazım)
+            # Seçilen borunun ID'sini hemen alalım
             current_ID_mm = get_ID(nps_selected, sch_selected)
             current_ID_m = current_ID_mm / 1000.0
 
@@ -249,15 +244,13 @@ if page_selection == "🏠 Pressure Drop Calc":
                 length = st.number_input("Straight Pipe Length (m)", 1000.0, step=50.0)
                 elevation = st.number_input("Elevation Change (m)", 0.0, help="Vertical lift (+ for up, - for down)")
 
-            # --- YENİ: FITTING HESAPLAYICI (EXPANDER) ---
+            # --- FITTING HESAPLAYICI ---
             calculated_fitting_len = 0.0
             with st.expander("🔧 Fitting & Valve Calculator (Optional)"):
                 st.caption("Select quantities to calculate Equivalent Length (Le)")
                 
                 col_fit1, col_fit2 = st.columns(2)
-                fitting_quantities = {}
                 
-                # Fittingleri iki kolona bölerek gösterelim
                 items = list(fitting_led_database.items())
                 half = len(items) // 2
                 
@@ -265,7 +258,6 @@ if page_selection == "🏠 Pressure Drop Calc":
                     for name, led_val in items[:half]:
                         qty = st.number_input(f"{name}", 0, step=1, key=f"fit_{name}")
                         if qty > 0:
-                            # Le = (Le/D) * ID
                             eq_len = qty * led_val * current_ID_m
                             calculated_fitting_len += eq_len
                             
@@ -286,7 +278,7 @@ if page_selection == "🏠 Pressure Drop Calc":
             project_name = st.text_input("Project Name (Optional)", "New-Design-01")
 
             if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
-                # Hesaplama (calculated_fitting_len'i fonksiyona yolluyoruz)
+                # Hesaplama
                 res = calculate_hydraulics(temp, flow, pressure, length, calculated_fitting_len, elevation, pump_eff, material_name, nps_selected, sch_selected)
                 
                 if res:
@@ -313,25 +305,16 @@ if page_selection == "🏠 Pressure Drop Calc":
                 k1.metric("Total Pump Head", f"{res['head_m']:.1f} mSS", help="Total Dynamic Head required")
                 k2.metric("Shaft Power", f"{res['power_shaft']:.2f} kW", help="Motor power required")
                 k3.metric("Hydraulic Power", f"{res['power_hyd']:.2f} kW", help="Power transferred to fluid")
-                [Image of centrifugal pump curve]
+                
                 st.markdown("---")
                 st.subheader("🌊 Flow Analysis")
                 m1, m2 = st.columns(2)
                 m1.metric("Total Pressure Drop", f"{res['dp_total']:.4f} bar", delta_color="inverse")
                 m2.metric("Flow Velocity", f"{res['vel']:.2f} m/s")
             
-            # --- Detaylı Analiz (Görsel Grafik) ---
+            # --- Detaylı Analiz ---
             st.subheader("Pressure Drop Breakdown")
             
-            # Basınç Kaybı Dağılım Grafiği (Friction vs Static)
-            # Eğer statik yük varsa gösterelim
-            breakdown_data = {
-                "Loss Type": ["Friction Loss", "Static Head (Elevation)"],
-                "Value (bar)": [res['dp_friction'], res['dp_static']]
-            }
-            
-            # Negatif statik yük (aşağı basma) grafikte garip durabilir, mutlak değer veya net gösterim gerekebilir.
-            # Şimdilik standart gösterim yapıyoruz.
             fig_pie = px.pie(
                 values=[max(0, res['dp_friction']), max(0, res['dp_static'])], 
                 names=["Friction Loss (Pipe+Fittings)", "Static Head (Elevation)"],
@@ -366,4 +349,137 @@ elif page_selection == "🛡️ Wall Thickness Check":
             mat_safe = st.selectbox("ASME Material Spec", selectable_materials, index=1, key="safe_mat")
             st.caption(f"Allowable Stress (S): **{asme_material_data[mat_safe]} MPa**")
             
-            c_s
+            c_s1, c_s2 = st.columns(2)
+            with c_s1:
+                nps_safe = st.selectbox("Size (Inch)", list(pipe_database.keys()), index=6, key="safe_nps")
+            with c_s2:
+                sch_safe = st.selectbox("Schedule", list(pipe_database[nps_safe].keys()), key="safe_sch")
+                
+            design_pres = st.number_input("Design Pressure (bar)", value=40.0)
+            
+            if st.button("🛡️ CHECK SAFETY", type="primary", use_container_width=True):
+                P_MPa = design_pres / 10.0
+                S_MPa = asme_material_data[mat_safe]
+                OD_mm = pipe_database[nps_safe][sch_safe]["OD"]
+                WT_actual = pipe_database[nps_safe][sch_safe]["WT"]
+                
+                t_req = (P_MPa * OD_mm) / (2 * (S_MPa * 1.0 + P_MPa * 0.4))
+                t_min = t_req + 1.0 
+                safety_factor = WT_actual / t_min
+                is_safe = safety_factor >= 1.0
+                
+                st.session_state['res_safe'] = {
+                    "req": t_min, "act": WT_actual, "safe": is_safe, "sf": safety_factor, "mat": mat_safe
+                }
+
+    with col_safe2:
+        if 'res_safe' in st.session_state:
+            res = st.session_state['res_safe']
+            st.subheader(f"Result: {res['mat']}")
+            k1, k2 = st.columns(2)
+            k1.metric("Required", f"{res['req']:.2f} mm")
+            k2.metric("Actual", f"{res['act']:.2f} mm")
+            
+            if res['safe']:
+                st.success(f"✅ SAFE! Factor: {res['sf']:.2f}")
+            else:
+                st.error(f"⚠️ UNSAFE! Need > {res['req']:.2f} mm")
+                
+            fig_safe = go.Figure()
+            fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[res['req'], res['act']], marker_color=['#FF4B4B', '#00CC96']))
+            st.plotly_chart(fig_safe, use_container_width=True)
+
+# ==================================================
+# SAYFA 3: ANALYTICS & SIMULATION
+# ==================================================
+elif page_selection == "📈 Analytics & Simulation":
+    st.title("📈 Analytics & Simulation Hub")
+    
+    tab_sim, tab_hist = st.tabs(["⚡ Live Simulation", "📊 Historical Charts"])
+    
+    with tab_sim:
+        st.subheader("Hydraulic Performance Simulator")
+        
+        with st.container(border=True):
+            col_sim1, col_sim2, col_sim3 = st.columns(3)
+            with col_sim1:
+                sim_flow = st.number_input("Flow (t/h)", 100.0, step=10.0, key="sim_flow")
+                sim_mat = st.selectbox("Material", list(material_list_roughness.keys()), key="sim_mat")
+            with col_sim2:
+                sim_pres = st.number_input("Pressure (bar)", 40.0, key="sim_pres")
+                sim_temp = st.number_input("Temp (°C)", 120.0, key="sim_temp")
+            with col_sim3:
+                sim_len = st.number_input("Length (m)", 1000.0, key="sim_len")
+                btn_simulate = st.button("🔄 RUN SIMULATION", type="primary", use_container_width=True)
+        
+        if btn_simulate:
+            results_list = []
+            for size_name, schedules in pipe_database.items():
+                sch_to_use = "40" if "40" in schedules else list(schedules.keys())[0]
+                res = calculate_hydraulics(sim_temp, sim_flow, sim_pres, sim_len, 0, 0, 75, sim_mat, size_name, sch_to_use)
+                if res:
+                    results_list.append({
+                        "NPS": size_name, "ID (mm)": res['id_mm'],
+                        "Velocity (m/s)": res['vel'], "Pressure Drop (bar)": res['dp_total'],
+                        "Power (kW)": res['power_shaft']
+                    })
+            
+            df_sim = pd.DataFrame(results_list)
+            
+            c_chart, c_tbl = st.columns([1.5, 1])
+            with c_chart:
+                fig_sim = px.scatter(df_sim, x="Velocity (m/s)", y="Power (kW)",
+                                     color="NPS", size="ID (mm)", size_max=40,
+                                     text="NPS", title="Power Consumption vs Velocity")
+                fig_sim.update_traces(textposition='top center')
+                st.plotly_chart(fig_sim, use_container_width=True)
+            with c_tbl:
+                st.dataframe(df_sim.sort_values("Velocity (m/s)", ascending=False), hide_index=True, use_container_width=True)
+
+    with tab_hist:
+        conn = sqlite3.connect(DB_FILE)
+        df_hist = pd.read_sql("SELECT * FROM projects", conn)
+        conn.close()
+        
+        if not df_hist.empty:
+            st.subheader("Historical Data Analysis")
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                fig_pie = px.pie(df_hist, names='material', hole=0.4, title="Material Usage")
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with col_h2:
+                fig_hist = px.histogram(df_hist, x="velocity", nbins=10, title="Velocity Distribution")
+                st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            st.info("No historical data available yet.")
+
+# ==================================================
+# SAYFA 4: PROJECT HISTORY
+# ==================================================
+elif page_selection == "📚 Project History":
+    st.title("📚 Project History")
+    
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql("SELECT * FROM projects ORDER BY id DESC", conn)
+    conn.close()
+    
+    if not df.empty:
+        search_term = st.text_input("🔍 Search", "")
+        if search_term:
+            df = df[df['name'].str.contains(search_term, case=False) | df['material'].str.contains(search_term, case=False)]
+        
+        st.dataframe(
+            df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "timestamp": st.column_config.DatetimeColumn("Date", format="D MMM YYYY, HH:mm"),
+                "pressure_drop": st.column_config.NumberColumn("Total dP (bar)", format="%.4f"),
+                "velocity": st.column_config.NumberColumn("Vel (m/s)", format="%.2f"),
+            }
+        )
+        
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "projects_export.csv", "text/csv", type="primary")
+    else:
+        st.warning("Database is empty.")
