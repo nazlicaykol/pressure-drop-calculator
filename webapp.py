@@ -148,7 +148,7 @@ if page_selection == "🏠 Pressure Drop Calc":
                     rho = PropsSI('D', 'T', T_K, 'P', P_Pa, 'Water')
                     mu = PropsSI('V', 'T', T_K, 'P', P_Pa, 'Water')
                     Area = math.pi * (ID_m / 2)**2
-                    velocity = m_dot_kg_s / (rho * Area)
+                    velocity = m_kg_s / (rho * Area)
                     Re = (rho * velocity * ID_m) / mu
                     
                     if Re > 4000:
@@ -275,3 +275,4 @@ elif page_selection == "📊 Project Database":
         st.download_button("📥 Download CSV", csv, "projects.csv", "text/csv")
     else:
         st.info("Database is empty.")
+
