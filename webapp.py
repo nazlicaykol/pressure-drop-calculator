@@ -14,20 +14,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- VERİTABANI DOSYA ADI (TEK MERKEZDEN YÖNETİM) ---
-# Burayı değiştirdiğimizde kodun her yeri otomatik güncellenir.
+# --- VERİTABANI DOSYA ADI ---
 DB_FILE = "project_data_final.db"
 
 # --- 2. DATABASE KURULUMU ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
-    # Not: Daha önceki 'DROP TABLE' komutunu kaldırdım çünkü 
-    # Streamlit her buton tıklamasında kodu baştan çalıştırır. 
-    # DROP komutu açık kalırsa verilerin her seferinde silinir.
-    # Dosya adını değiştirdiğimiz için (final.db) zaten sıfırdan oluşacak.
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,27 +37,51 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Uygulama başladığında veritabanını kontrol et
 init_db()
 
 # --- 3. VERİTABANLARI ---
-material_list = {
-    "Carbon Steel": 0.045,
+
+# Module 1 İçin Basit Malzeme Listesi (Roughness Odaklı)
+material_list_roughness = {
+    "Carbon Steel (New)": 0.045,
+    "Carbon Steel (Corroded)": 0.5,
     "Stainless Steel": 0.0015,
     "Copper": 0.0015,
-    "PVC": 0.0015,
+    "PVC / Plastic": 0.0015,
     "Concrete": 0.01,
     "Galvanized Steel": 0.15
 }
 
-# Malzeme Dayanımları (Safety Check için - MPa)
-material_stress = {
-    "Carbon Steel": 138.0,
-    "Stainless Steel": 115.0,
-    "Copper": 41.0,
-    "PVC": 14.0,
-    "Concrete": 20.0,
-    "Galvanized Steel": 138.0
+# Module 2 İçin GÜNCELLENMİŞ ASME B31.3 Malzeme Listesi (Stress Odaklı)
+# Değerler MPa cinsinden Allowable Stress (S) @ ~40°C
+asme_material_data = {
+    "--- CARBON STEEL ---": 0, # Başlık (Seçilmemeli)
+    "A106 Grade A": 110.0,
+    "A106 Grade B": 138.0,
+    "A106 Grade C": 161.0,
+    "A53 Grade A": 110.0,
+    "A53 Grade B": 138.0,
+    "API 5L Grade B": 138.0,
+    "API 5L X42 (L290)": 138.0,
+    "API 5L X52 (L360)": 153.0,
+    "API 5L X60 (L415)": 173.0,
+    "API 5L X65 (L450)": 178.0,
+    "A333 Grade 6 (Low Temp)": 138.0,
+    
+    "--- STAINLESS STEEL ---": 0,
+    "SS 304 (A312 TP304)": 138.0,
+    "SS 304L (A312 TP304L)": 115.0,
+    "SS 316 (A312 TP316)": 138.0,
+    "SS 316L (A312 TP316L)": 115.0,
+    "SS 321 (A312 TP321)": 138.0,
+    "SS 347 (A312 TP347)": 138.0,
+    
+    "--- ALLOY STEEL ---": 0,
+    "A335 P11 (1-1/4 Cr)": 126.0,
+    "A335 P22 (2-1/4 Cr)": 126.0,
+    "A335 P5 (5 Cr)": 126.0,
+    "A335 P9 (9 Cr)": 138.0,
+    "A335 P91 (9 Cr-V)": 195.0
 }
 
 pipe_database = {
@@ -103,7 +120,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.caption("v3.0 | Engineering Tools") 
+    st.caption("v3.1 | Engineering Tools") 
 
 # ==================================================
 # SAYFA 1: PRESSURE DROP CALCULATOR
@@ -130,17 +147,16 @@ if page_selection == "🏠 Pressure Drop Calc":
             st.markdown("---")
             st.subheader("Pipe & Material Selection")
             
-            # --- Girdiler Artık Ana Ekranda ---
-            material_name = st.selectbox("Material", list(material_list.keys()))
+            # Module 1 için Basit Malzeme Listesini Kullanıyoruz
+            material_name = st.selectbox("Material", list(material_list_roughness.keys()))
             
             c3, c4 = st.columns(2)
             with c3:
-                nps_selected = st.selectbox("Nominal Size (Inch)", list(pipe_database.keys()), index=6) # 4 inch default
+                nps_selected = st.selectbox("Nominal Size (Inch)", list(pipe_database.keys()), index=6) 
             with c4:
                 available_schedules = list(pipe_database[nps_selected].keys())
                 sch_selected = st.selectbox("Schedule (Thickness)", available_schedules)
             
-            # Seçilen boru bilgisini göster
             current_ID = get_ID(nps_selected, sch_selected)
             d_info = pipe_database[nps_selected][sch_selected]
             st.info(f"📋 Info: OD {d_info['OD']} mm | WT {d_info['WT']} mm | ID {current_ID:.2f} mm")
@@ -148,7 +164,7 @@ if page_selection == "🏠 Pressure Drop Calc":
             project_name = st.text_input("Project Name (Optional)", "My-Calculation-01")
 
             if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
-                roughness = material_list[material_name]
+                roughness = material_list_roughness[material_name]
                 ID_mm = current_ID
                 T_K = temp + 273.15
                 P_Pa = pressure * 100000
@@ -172,14 +188,12 @@ if page_selection == "🏠 Pressure Drop Calc":
                     dP_Pa = f * (length / ID_m) * (rho * velocity**2 / 2)
                     dP_bar = dP_Pa / 100000
                     
-                    # Session State'e Kaydet
                     st.session_state['res_dp'] = {
                         "dp": dP_bar, "vel": velocity, "re": Re, "f": f,
                         "rho": rho, "mu": mu
                     }
                     
-                    # Veritabanına Kaydet (GÜNCELLENDİ)
-                    conn = sqlite3.connect(DB_FILE) # Artık global değişkeni kullanıyoruz
+                    conn = sqlite3.connect(DB_FILE)
                     cur = conn.cursor()
                     cur.execute("INSERT INTO projects (name, material, nps, sch, pressure_drop, velocity) VALUES (?,?,?,?,?,?)", 
                                 (project_name, material_name, nps_selected, sch_selected, dP_bar, velocity))
@@ -207,15 +221,15 @@ if page_selection == "🏠 Pressure Drop Calc":
             st.subheader("Detailed Properties")
             st.write(f"Density: **{res['rho']:.2f} kg/m³**")
             st.write(f"Viscosity: **{res['mu']:.6f} Pa.s**")
-            st.caption("Calculation based on Darcy-Weisbach & Colebrook-White equations.")
         else:
             st.info("👈 Please enter data and click Calculate.")
 
 # ==================================================
-# SAYFA 2: WALL THICKNESS SAFETY CHECK
+# SAYFA 2: WALL THICKNESS SAFETY CHECK (GÜNCELLENDİ)
 # ==================================================
 elif page_selection == "🛡️ Wall Thickness Check":
     st.title("🛡️ Wall Thickness Check")
+    st.markdown("ASME B31.3 Table A-1 based safety verification.")
     
     col_safe1, col_safe2 = st.columns([1, 1])
     
@@ -223,8 +237,13 @@ elif page_selection == "🛡️ Wall Thickness Check":
         with st.container(border=True):
             st.subheader("Design Parameters")
             
-            # Bu sayfada da kendi seçim kutuları olsun
-            mat_safe = st.selectbox("Material", list(material_list.keys()), key="safe_mat")
+            # --- YENİ ASME MALZEME LİSTESİ ---
+            # Kullanıcının yanlışlıkla başlığı seçmesini engellemek için filtreleyelim
+            selectable_materials = [k for k,v in asme_material_data.items() if v > 0]
+            
+            mat_safe = st.selectbox("ASME Material Spec", selectable_materials, index=1, key="safe_mat")
+            
+            st.caption(f"Allowable Stress (S) for {mat_safe}: **{asme_material_data[mat_safe]} MPa**")
             
             c_s1, c_s2 = st.columns(2)
             with c_s1:
@@ -236,28 +255,38 @@ elif page_selection == "🛡️ Wall Thickness Check":
             
             if st.button("🛡️ CHECK SAFETY", type="primary", use_container_width=True):
                 P_MPa = design_pres / 10.0
-                S_MPa = material_stress[mat_safe]
+                
+                # Yeni listeden stresi alıyoruz
+                S_MPa = asme_material_data[mat_safe]
+                
+                # Boru datası
                 OD_mm = pipe_database[nps_safe][sch_safe]["OD"]
                 WT_actual = pipe_database[nps_safe][sch_safe]["WT"]
                 
-                # ASME B31.3 Basitleştirilmiş
-                t_req = (P_MPa * OD_mm) / (2 * (S_MPa * 1.0 + P_MPa * 0.4))
-                t_min = t_req + 1.0 # +1mm korozyon
+                # ASME B31.3 Kalınlık Hesabı
+                # t = (P * D) / (2 * (S * E + P * Y))
+                # Basitleştirilmiş: E=1.0 (Seamless), Y=0.4 (Ferritic < 482C)
+                E = 1.0 
+                Y = 0.4
+                
+                t_req = (P_MPa * OD_mm) / (2 * (S_MPa * E + P_MPa * Y))
+                t_min = t_req + 1.0 # Corrosion Allowance (1mm)
                 
                 safety_factor = WT_actual / t_min
                 is_safe = safety_factor >= 1.0
                 
                 st.session_state['res_safe'] = {
-                    "req": t_min, "act": WT_actual, "safe": is_safe, "sf": safety_factor
+                    "req": t_min, "act": WT_actual, "safe": is_safe, "sf": safety_factor,
+                    "mat": mat_safe
                 }
 
     with col_safe2:
         if 'res_safe' in st.session_state:
             res = st.session_state['res_safe']
-            st.subheader("Safety Report")
+            st.subheader(f"Results for {res['mat']}")
             
             k1, k2 = st.columns(2)
-            k1.metric("Required Thickness", f"{res['req']:.2f} mm")
+            k1.metric("Required Thickness (inc. CA)", f"{res['req']:.2f} mm")
             k2.metric("Actual Thickness", f"{res['act']:.2f} mm")
             
             if res['safe']:
@@ -265,9 +294,14 @@ elif page_selection == "🛡️ Wall Thickness Check":
             else:
                 st.error(f"⚠️ UNSAFE! Pipe is too thin. Need > {res['req']:.2f} mm")
                 
+            # Görselleştirme 
             fig_safe = go.Figure()
             fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[res['req'], res['act']], 
-                                     marker_color=['red', 'green']))
+                                     marker_color=['#FF4B4B', '#00CC96'],
+                                     text=[f"{res['req']:.2f}mm", f"{res['act']:.2f}mm"],
+                                     textposition='auto'))
+            
+            fig_safe.update_layout(title_text="Thickness Comparison", template="plotly_white")
             st.plotly_chart(fig_safe, use_container_width=True)
 
 # ==================================================
@@ -276,8 +310,7 @@ elif page_selection == "🛡️ Wall Thickness Check":
 elif page_selection == "📊 Project Database":
     st.title("📊 Project Database")
     
-    # Veritabanı Okuma (GÜNCELLENDİ)
-    conn = sqlite3.connect(DB_FILE) # Artık global değişkeni kullanıyoruz
+    conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql("SELECT * FROM projects ORDER BY id DESC", conn)
     conn.close()
     
