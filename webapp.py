@@ -3,7 +3,7 @@ from CoolProp.CoolProp import PropsSI
 import math
 import plotly.express as px
 
-# --- 1. SAYFA AYARLARI ---
+# --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="HydraulicCalc Pro",
     page_icon="💧",
@@ -11,7 +11,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. TAM KAPSAMLI BORU VERİTABANI (PDF'ten Alınan Veriler) ---
+# --- 2. PIPE DATABASE (ANSI/ASME B36.10M) ---
+# Units: mm (Millimeters)
 pipe_database = {
     "1/8 inch": {
         "10": {"OD": 10.3, "WT": 1.24}, "30": {"OD": 10.3, "WT": 1.45}, "40": {"OD": 10.3, "WT": 1.73}, 
@@ -109,9 +110,10 @@ pipe_database = {
     }
 }
 
+# English Material Names
 material_list = {
-    "Karbon Çelik (Carbon Steel)": 0.045, "Paslanmaz Çelik (Stainless Steel)": 0.0015,
-    "Bakır (Copper)": 0.0015, "PVC": 0.0015, "Beton (Concrete)": 0.01, "Galvanizli Çelik": 0.15
+    "Carbon Steel": 0.045, "Stainless Steel": 0.0015,
+    "Copper": 0.0015, "PVC": 0.0015, "Concrete": 0.01, "Galvanized Steel": 0.15
 }
 
 def get_ID(nps, sch):
@@ -120,41 +122,41 @@ def get_ID(nps, sch):
         return d["OD"] - 2 * d["WT"]
     return None
 
-# --- 3. ARAYÜZ (GİRDİLER) ---
-st.title("💧 Basınç Kaybı Hesaplayıcı")
+# --- 3. UI LAYOUT (INPUTS) ---
+st.title("💧 Pressure Drop Calculator")
 st.markdown("---")
 
-st.subheader("1. Proses Verileri")
+st.subheader("1. Process Data")
 col1, col2 = st.columns(2)
 with col1:
-    temp = st.number_input("Sıcaklık (°C)", value=120.0, step=1.0)
-    flow = st.number_input("Kütlesel Debi (t/h)", value=100.0, step=10.0)
+    temp = st.number_input("Temperature (°C)", value=120.0, step=1.0)
+    flow = st.number_input("Mass Flow Rate (t/h)", value=100.0, step=10.0)
 with col2:
-    pressure = st.number_input("Basınç (bar)", value=40.0, step=1.0)
-    length = st.number_input("Boru Uzunluğu (m)", value=5000.0, step=50.0)
+    pressure = st.number_input("Pressure (bar)", value=40.0, step=1.0)
+    length = st.number_input("Pipe Length (m)", value=5000.0, step=50.0)
 
-st.subheader("2. Boru Özellikleri")
+st.subheader("2. Pipe Properties")
 col3, col4 = st.columns(2)
 with col3:
-    material_name = st.selectbox("Malzeme Seçin", list(material_list.keys()))
-    nps_selected = st.selectbox("Nominal Çap (NPS)", list(pipe_database.keys()), index=12) # Varsayılan 4 inch
+    material_name = st.selectbox("Select Material", list(material_list.keys()))
+    nps_selected = st.selectbox("Nominal Pipe Size (NPS)", list(pipe_database.keys()), index=12) # Default 4 inch
 
 with col4:
     available_schedules = list(pipe_database[nps_selected].keys())
-    sch_selected = st.selectbox("Schedule (Et Kalınlığı)", available_schedules)
+    sch_selected = st.selectbox("Schedule (Wall Thickness)", available_schedules)
     
     current_ID = get_ID(nps_selected, sch_selected)
     
-    # KULLANICI KONTROLÜ İÇİN EK BİLGİ (DEBUG)
+    # DEBUG INFO IN ENGLISH
     if nps_selected in pipe_database and sch_selected in pipe_database[nps_selected]:
         d_info = pipe_database[nps_selected][sch_selected]
-        st.info(f"📋 Seçilen: {nps_selected} - {sch_selected} | OD: {d_info['OD']} mm | WT: {d_info['WT']} mm")
+        st.info(f"📋 Selected: {nps_selected} - {sch_selected} | OD: {d_info['OD']} mm | WT: {d_info['WT']} mm")
     
-    st.success(f"Hesaplanan İç Çap (ID): **{current_ID:.2f} mm**")
+    st.success(f"Calculated Inner Diameter (ID): **{current_ID:.2f} mm**")
 
-# --- 4. HESAPLAMA MOTORU ---
+# --- 4. CALCULATION ENGINE ---
 st.markdown("---")
-if st.button("🚀 HESAPLA", type="primary", use_container_width=True):
+if st.button("🚀 CALCULATE", type="primary", use_container_width=True):
     roughness = material_list[material_name]
     ID_mm = current_ID
     
@@ -181,18 +183,18 @@ if st.button("🚀 HESAPLA", type="primary", use_container_width=True):
         dP_pascal = f * (length / ID_m) * (rho * velocity**2 / 2)
         dP_bar = dP_pascal / 100000
         
-        st.success("Hesaplama Başarıyla Tamamlandı!")
+        st.success("Calculation Completed Successfully!")
         
         res1, res2, res3, res4 = st.columns(4)
-        res1.metric("Basınç Kaybı", f"{dP_bar:.4f} bar", delta_color="inverse")
-        res2.metric("Akış Hızı", f"{velocity:.2f} m/s")
-        res3.metric("Reynolds Sayısı", f"{Re:.0f}")
-        res4.metric("Sürtünme Faktörü", f"{f:.5f}")
+        res1.metric("Pressure Drop", f"{dP_bar:.4f} bar", delta_color="inverse")
+        res2.metric("Flow Velocity", f"{velocity:.2f} m/s")
+        res3.metric("Reynolds Number", f"{Re:.0f}")
+        res4.metric("Friction Factor", f"{f:.5f}")
         
-        with st.expander("Detaylı Akışkan Özellikleri"):
-            st.write(f"- **Yoğunluk:** {rho:.2f} kg/m³")
-            st.write(f"- **Viskozite:** {mu:.6f} Pa.s")
-            st.write(f"- **Akış Alanı:** {Area:.6f} m²")
+        with st.expander("Detailed Fluid Properties"):
+            st.write(f"- **Density:** {rho:.2f} kg/m³")
+            st.write(f"- **Viscosity:** {mu:.6f} Pa.s")
+            st.write(f"- **Flow Area:** {Area:.6f} m²")
 
     except Exception as e:
-        st.error(f"Hesaplama Hatası: {e}")
+        st.error(f"Calculation Error: {e}")
