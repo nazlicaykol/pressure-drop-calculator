@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 # --- 1. SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="HydraulicSuite Pro",
+    page_title="HydraulicSuite Pro",   
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -275,4 +275,3 @@ elif page_selection == "📊 Project Database":
         st.download_button("📥 Download CSV", csv, "projects.csv", "text/csv")
     else:
         st.info("Database is empty.")
-
