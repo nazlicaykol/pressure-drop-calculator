@@ -4,13 +4,14 @@ import sqlite3
 import math
 from CoolProp.CoolProp import PropsSI
 import plotly.express as px
+import plotly.graph_objects as go
 
-# --- 1. SAYFA AYARLARI ---
+# --- 1. SAYFA AYARLARI (Page Config) ---
 st.set_page_config(
-    page_title="HydraulicCalc Pro",
-    page_icon="⚙️",
-    layout="wide", # Geniş ekran modu
-    initial_sidebar_state="expanded" # Yan menü açık başlasın
+    page_title="HydraulicSuite Pro",
+    page_icon="🏭",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # --- 2. DATABASE KURULUMU ---
@@ -26,7 +27,8 @@ def init_db():
             nps TEXT,
             sch TEXT,
             pressure_drop REAL,
-            velocity REAL
+            velocity REAL,
+            safety_factor REAL
         )
     """)
     conn.commit()
@@ -34,34 +36,28 @@ def init_db():
 
 init_db()
 
-# --- 3. VERİTABANLARI (ASME B31.3 & B36.10M) ---
-material_list = {
-    "ASME B31.3 - Carbon Steel (A106 Gr.B)": 0.045,
-    "ASME B31.3 - Stainless Steel (A312 TP304/316)": 0.015,
-    "ASME B31.3 - Galvanized Steel": 0.15,
-    "Commercial Steel": 0.045,
-    "Drawn Brass / Copper": 0.0015,
-    "PVC / Thermoplastics": 0.0015,
-    "Concrete (Smooth)": 0.3,
-    "Cast Iron": 0.26
+# --- 3. VERİTABANLARI (GENİŞLETİLMİŞ) ---
+# Malzeme Pürüzlülüğü (mm) ve İzin Verilen Gerilme (Allowable Stress - MPa) [Yaklaşık Değerler]
+material_props = {
+    "Carbon Steel (A106 Gr.B)": {"roughness": 0.045, "stress": 138.0},  # ~20,000 psi
+    "Stainless Steel (A312 TP304)": {"roughness": 0.015, "stress": 115.0}, # ~16,700 psi
+    "PVC (Sch 40/80)": {"roughness": 0.0015, "stress": 14.0},       # ~2,000 psi
+    "Copper (B88)": {"roughness": 0.0015, "stress": 41.0},          # ~6,000 psi
+    "Galvanized Steel": {"roughness": 0.15, "stress": 138.0}
 }
 
 pipe_database = {
-    "1/8 inch": {"10": {"OD": 10.3, "WT": 1.24}, "40": {"OD": 10.3, "WT": 1.73}, "STD": {"OD": 10.3, "WT": 1.73}, "80": {"OD": 10.3, "WT": 2.41}, "XS": {"OD": 10.3, "WT": 2.41}},
-    "1/4 inch": {"10": {"OD": 13.7, "WT": 1.65}, "40": {"OD": 13.7, "WT": 2.24}, "STD": {"OD": 13.7, "WT": 2.24}, "80": {"OD": 13.7, "WT": 3.02}, "XS": {"OD": 13.7, "WT": 3.02}},
-    "3/8 inch": {"10": {"OD": 17.1, "WT": 1.65}, "40": {"OD": 17.1, "WT": 2.31}, "STD": {"OD": 17.1, "WT": 2.31}, "80": {"OD": 17.1, "WT": 3.20}, "XS": {"OD": 17.1, "WT": 3.20}},
-    "1/2 inch": {"10": {"OD": 21.3, "WT": 2.11}, "40": {"OD": 21.3, "WT": 2.77}, "STD": {"OD": 21.3, "WT": 2.77}, "80": {"OD": 21.3, "WT": 3.73}, "XS": {"OD": 21.3, "WT": 3.73}, "160": {"OD": 21.3, "WT": 4.78}, "XXS": {"OD": 21.3, "WT": 7.47}},
-    "3/4 inch": {"10": {"OD": 26.7, "WT": 2.11}, "40": {"OD": 26.7, "WT": 2.87}, "STD": {"OD": 26.7, "WT": 2.87}, "80": {"OD": 26.7, "WT": 3.91}, "XS": {"OD": 26.7, "WT": 3.91}, "160": {"OD": 26.7, "WT": 5.56}, "XXS": {"OD": 26.7, "WT": 7.82}},
-    "1 inch":   {"5": {"OD": 33.4, "WT": 1.65}, "10": {"OD": 33.4, "WT": 2.77}, "40": {"OD": 33.4, "WT": 3.38}, "STD": {"OD": 33.4, "WT": 3.38}, "80": {"OD": 33.4, "WT": 4.55}, "XS": {"OD": 33.4, "WT": 4.55}, "160": {"OD": 33.4, "WT": 6.35}, "XXS": {"OD": 33.4, "WT": 9.09}},
-    "1 1/2 inch": {"10": {"OD": 48.3, "WT": 2.77}, "40": {"OD": 48.3, "WT": 3.68}, "STD": {"OD": 48.3, "WT": 3.68}, "80": {"OD": 48.3, "WT": 5.08}, "XS": {"OD": 48.3, "WT": 5.08}, "160": {"OD": 48.3, "WT": 7.14}, "XXS": {"OD": 48.3, "WT": 10.15}},
-    "2 inch":   {"10": {"OD": 60.3, "WT": 2.77}, "40": {"OD": 60.3, "WT": 3.91}, "STD": {"OD": 60.3, "WT": 3.91}, "80": {"OD": 60.3, "WT": 5.54}, "XS": {"OD": 60.3, "WT": 5.54}, "160": {"OD": 60.3, "WT": 8.74}, "XXS": {"OD": 60.3, "WT": 11.07}},
-    "2 1/2 inch": {"10": {"OD": 73.0, "WT": 3.05}, "40": {"OD": 73.0, "WT": 5.16}, "STD": {"OD": 73.0, "WT": 5.16}, "80": {"OD": 73.0, "WT": 7.01}, "XS": {"OD": 73.0, "WT": 7.01}, "160": {"OD": 73.0, "WT": 9.53}, "XXS": {"OD": 73.0, "WT": 14.02}},
-    "3 inch":   {"10": {"OD": 88.9, "WT": 3.05}, "40": {"OD": 88.9, "WT": 5.49}, "STD": {"OD": 88.9, "WT": 5.49}, "80": {"OD": 88.9, "WT": 7.62}, "XS": {"OD": 88.9, "WT": 7.62}, "160": {"OD": 88.9, "WT": 11.13}, "XXS": {"OD": 88.9, "WT": 15.24}},
-    "4 inch":   {"10": {"OD": 114.3, "WT": 3.05}, "40": {"OD": 114.3, "WT": 6.02}, "STD": {"OD": 114.3, "WT": 6.02}, "80": {"OD": 114.3, "WT": 8.56}, "XS": {"OD": 114.3, "WT": 8.56}, "120": {"OD": 114.3, "WT": 11.13}, "160": {"OD": 114.3, "WT": 13.49}, "XXS": {"OD": 114.3, "WT": 17.12}},
-    "6 inch":   {"10": {"OD": 168.3, "WT": 3.40}, "40": {"OD": 168.3, "WT": 7.11}, "STD": {"OD": 168.3, "WT": 7.11}, "80": {"OD": 168.3, "WT": 10.97}, "XS": {"OD": 168.3, "WT": 10.97}, "120": {"OD": 168.3, "WT": 14.27}, "160": {"OD": 168.3, "WT": 18.26}, "XXS": {"OD": 168.3, "WT": 21.95}},
-    "8 inch":   {"10": {"OD": 219.1, "WT": 3.76}, "40": {"OD": 219.1, "WT": 8.18}, "STD": {"OD": 219.1, "WT": 8.18}, "60": {"OD": 219.1, "WT": 10.31}, "80": {"OD": 219.1, "WT": 12.70}, "XS": {"OD": 219.1, "WT": 12.70}, "100": {"OD": 219.1, "WT": 15.09}, "120": {"OD": 219.1, "WT": 18.26}, "140": {"OD": 219.1, "WT": 20.62}, "160": {"OD": 219.1, "WT": 23.01}, "XXS": {"OD": 219.1, "WT": 22.23}},
-    "10 inch":  {"10": {"OD": 273.0, "WT": 4.19}, "20": {"OD": 273.0, "WT": 6.35}, "30": {"OD": 273.0, "WT": 7.80}, "40": {"OD": 273.0, "WT": 9.27}, "STD": {"OD": 273.0, "WT": 9.27}, "60": {"OD": 273.0, "WT": 12.70}, "XS": {"OD": 273.0, "WT": 12.70}, "80": {"OD": 273.0, "WT": 15.09}, "100": {"OD": 273.0, "WT": 18.26}, "120": {"OD": 273.0, "WT": 21.44}, "140": {"OD": 273.0, "WT": 25.40}, "XXS": {"OD": 273.0, "WT": 25.40}, "160": {"OD": 273.0, "WT": 28.58}},
-    "12 inch":  {"10": {"OD": 323.8, "WT": 4.57}, "20": {"OD": 323.8, "WT": 6.35}, "30": {"OD": 323.8, "WT": 8.38}, "40": {"OD": 323.8, "WT": 10.31}, "STD": {"OD": 323.8, "WT": 9.53}, "XS": {"OD": 323.8, "WT": 12.70}, "60": {"OD": 323.8, "WT": 14.27}, "80": {"OD": 323.8, "WT": 17.48}, "100": {"OD": 323.8, "WT": 21.44}, "120": {"OD": 323.8, "WT": 25.40}, "140": {"OD": 323.8, "WT": 28.58}, "160": {"OD": 323.8, "WT": 33.32}, "XXS": {"OD": 323.8, "WT": 25.40}}
+    "1/2 inch": {"10": {"OD": 21.3, "WT": 2.11}, "40": {"OD": 21.3, "WT": 2.77}, "80": {"OD": 21.3, "WT": 3.73}},
+    "3/4 inch": {"10": {"OD": 26.7, "WT": 2.11}, "40": {"OD": 26.7, "WT": 2.87}, "80": {"OD": 26.7, "WT": 3.91}},
+    "1 inch":   {"10": {"OD": 33.4, "WT": 2.77}, "40": {"OD": 33.4, "WT": 3.38}, "80": {"OD": 33.4, "WT": 4.55}},
+    "1 1/2 inch": {"10": {"OD": 48.3, "WT": 2.77}, "40": {"OD": 48.3, "WT": 3.68}, "80": {"OD": 48.3, "WT": 5.08}},
+    "2 inch":   {"10": {"OD": 60.3, "WT": 2.77}, "40": {"OD": 60.3, "WT": 3.91}, "80": {"OD": 60.3, "WT": 5.54}},
+    "3 inch":   {"10": {"OD": 88.9, "WT": 3.05}, "40": {"OD": 88.9, "WT": 5.49}, "80": {"OD": 88.9, "WT": 7.62}},
+    "4 inch":   {"10": {"OD": 114.3, "WT": 3.05}, "40": {"OD": 114.3, "WT": 6.02}, "80": {"OD": 114.3, "WT": 8.56}, "120": {"OD": 114.3, "WT": 11.13}, "160": {"OD": 114.3, "WT": 13.49}, "XXS": {"OD": 114.3, "WT": 17.12}},
+    "6 inch":   {"10": {"OD": 168.3, "WT": 3.40}, "40": {"OD": 168.3, "WT": 7.11}, "80": {"OD": 168.3, "WT": 10.97}, "120": {"OD": 168.3, "WT": 14.27}, "160": {"OD": 168.3, "WT": 18.26}},
+    "8 inch":   {"10": {"OD": 219.1, "WT": 3.76}, "40": {"OD": 219.1, "WT": 8.18}, "60": {"OD": 219.1, "WT": 10.31}, "80": {"OD": 219.1, "WT": 12.70}, "100": {"OD": 219.1, "WT": 15.09}, "120": {"OD": 219.1, "WT": 18.26}, "140": {"OD": 219.1, "WT": 20.62}, "160": {"OD": 219.1, "WT": 23.01}},
+    "10 inch":  {"10": {"OD": 273.0, "WT": 4.19}, "20": {"OD": 273.0, "WT": 6.35}, "30": {"OD": 273.0, "WT": 7.80}, "40": {"OD": 273.0, "WT": 9.27}, "60": {"OD": 273.0, "WT": 12.70}, "80": {"OD": 273.0, "WT": 15.09}, "100": {"OD": 273.0, "WT": 18.26}, "120": {"OD": 273.0, "WT": 21.44}, "140": {"OD": 273.0, "WT": 25.40}, "160": {"OD": 273.0, "WT": 28.58}},
+    "12 inch":  {"10": {"OD": 323.8, "WT": 4.57}, "20": {"OD": 323.8, "WT": 6.35}, "30": {"OD": 323.8, "WT": 8.38}, "40": {"OD": 323.8, "WT": 10.31}, "60": {"OD": 323.8, "WT": 14.27}, "80": {"OD": 323.8, "WT": 17.48}, "100": {"OD": 323.8, "WT": 21.44}, "120": {"OD": 323.8, "WT": 25.40}, "140": {"OD": 323.8, "WT": 28.58}, "160": {"OD": 323.8, "WT": 33.32}}
 }
 
 def get_ID(nps, sch):
@@ -71,168 +67,188 @@ def get_ID(nps, sch):
     return None
 
 # ==================================================
-# SOL SÜTUN: ENGINEERING CALCULATOR (GİRDİLER)
+# SOL MENÜ (NAVİGASYON)
 # ==================================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3093/3093409.png", width=80)
-    st.title("🔧 Engineering Calculator")
+    st.title("HydraulicSuite Pro")
+    
+    # SAYFA SEÇİMİ (NAVIGASYON)
+    page_selection = st.radio(
+        "Go to Module:",
+        ["🏠 Pressure Drop Calc", "🛡️ Wall Thickness Check", "📊 Project Database"]
+    )
     st.markdown("---")
-
-    # Bölüm 1: Proses Verileri (Açılır/Kapanır)
-    with st.expander("1. Process Data", expanded=True):
-        temp = st.number_input("Temperature (°C)", 120.0, step=1.0)
-        pressure = st.number_input("Pressure (bar)", 40.0, step=1.0)
-        flow = st.number_input("Mass Flow (t/h)", 100.0, step=5.0)
-        length = st.number_input("Pipe Length (m)", 5000.0, step=50.0)
-
-    # Bölüm 2: Boru Seçimi (Açılır/Kapanır)
-    with st.expander("2. Pipe Selection", expanded=True):
-        material_name = st.selectbox("Material", list(material_list.keys()))
-        nps_selected = st.selectbox("Nominal Size (NPS)", list(pipe_database.keys()), index=12)
-        
-        # Schedule dinamik doluyor
-        sch_selected = st.selectbox("Schedule", list(pipe_database[nps_selected].keys()))
-        
-        current_ID = get_ID(nps_selected, sch_selected)
-        st.info(f"📏 ID: {current_ID:.2f} mm")
-
-    # Bölüm 3: Kayıt İşlemi
-    with st.expander("3. Save Options", expanded=False):
-        project_name = st.text_input("Project Name", "New-Project-01")
-
-    st.markdown("---")
-    # Ana Hesapla Butonu (Sidebar'ın en altında)
-    calculate_btn = st.button("🚀 CALCULATE & SAVE", type="primary", use_container_width=True)
+    
+    # Global Girdiler (Tüm sayfalarda kullanılabilir)
+    st.write("🔧 **Quick Settings**")
+    material_name = st.selectbox("Material", list(material_props.keys()))
+    nps_selected = st.selectbox("Nominal Size (NPS)", list(pipe_database.keys()), index=6)
+    
+    available_schedules = list(pipe_database[nps_selected].keys())
+    sch_selected = st.selectbox("Schedule", available_schedules)
+    
+    current_ID = get_ID(nps_selected, sch_selected)
+    d_info = pipe_database[nps_selected][sch_selected]
+    
+    st.info(f"OD: {d_info['OD']} mm | WT: {d_info['WT']} mm")
+    st.caption("v2.1 | ASME B31.3 Compliant")
 
 # ==================================================
-# ANA EKRAN: SONUÇLAR VE VERİTABANI
+# SAYFA 1: PRESSURE DROP CALCULATOR (MEVCUT SİSTEM)
 # ==================================================
-
-st.title("📊 Project Dashboard")
-
-# Hesapla butonuna basıldıysa işlemleri yap
-if calculate_btn:
-    roughness = material_list[material_name]
-    ID_mm = current_ID
+if page_selection == "🏠 Pressure Drop Calc":
+    st.title("💧 Pressure Drop Calculator")
+    st.markdown("Calculate head loss in pipes using Darcy-Weisbach equation.")
     
-    # Fiziksel Hesaplar
-    T_K = temp + 273.15
-    P_Pa = pressure * 100000
-    m_kg_s = flow * 1000 / 3600
-    ID_m = ID_mm / 1000
+    col1, col2 = st.columns(2)
+    with col1:
+        with st.container(border=True):
+            st.subheader("Process Inputs")
+            temp = st.number_input("Temperature (°C)", 120.0, step=1.0)
+            pressure = st.number_input("Pressure (bar)", 40.0, step=1.0)
+            flow = st.number_input("Mass Flow (t/h)", 100.0, step=10.0)
+            length = st.number_input("Length (m)", 5000.0, step=50.0)
+            
+    with col2:
+        with st.container(border=True):
+            st.subheader("Results Dashboard")
+            if st.button("🚀 CALCULATE PRESSURE DROP", type="primary", use_container_width=True):
+                roughness = material_props[material_name]["roughness"]
+                ID_mm = current_ID
+                T_K = temp + 273.15
+                P_Pa = pressure * 100000
+                m_kg_s = flow * 1000 / 3600
+                ID_m = ID_mm / 1000
+                
+                try:
+                    rho = PropsSI('D', 'T', T_K, 'P', P_Pa, 'Water')
+                    mu = PropsSI('V', 'T', T_K, 'P', P_Pa, 'Water')
+                    Area = math.pi * (ID_m / 2)**2
+                    velocity = m_dot_kg_s / (rho * Area)
+                    Re = (rho * velocity * ID_m) / mu
+                    
+                    if Re > 4000:
+                        f = (-1.8 * math.log10((roughness/1000/ID_m/3.7)**1.11 + 6.9/Re))**-2
+                    elif Re > 0:
+                        f = 64 / Re
+                    else:
+                        f = 0
+                        
+                    dP_Pa = f * (length / ID_m) * (rho * velocity**2 / 2)
+                    dP_bar = dP_Pa / 100000
+                    
+                    # Sonuçlar
+                    c1, c2 = st.columns(2)
+                    c1.metric("Pressure Drop", f"{dP_bar:.4f} bar", delta_color="inverse")
+                    c2.metric("Velocity", f"{velocity:.2f} m/s")
+                    st.metric("Reynolds Number", f"{Re:.0f}")
+                    
+                    # Veritabanına Yaz
+                    conn = sqlite3.connect("project_data.db")
+                    cur = conn.cursor()
+                    cur.execute("INSERT INTO projects (name, material, nps, sch, pressure_drop, velocity) VALUES (?,?,?,?,?,?)", 
+                                ("Pressure Calc", material_name, nps_selected, sch_selected, dP_bar, velocity))
+                    conn.commit()
+                    conn.close()
+                    st.toast("Result saved to database!")
+                    
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.info("Click the button to start calculation.")
+
+# ==================================================
+# SAYFA 2: WALL THICKNESS SAFETY CHECK (YENİ MODÜL!)
+# ==================================================
+elif page_selection == "🛡️ Wall Thickness Check":
+    st.title("🛡️ Pipe Wall Thickness Safety Check")
+    st.markdown("Check if the selected pipe can withstand the internal pressure (ASME B31.3 Standard).")
     
-    try:
-        rho = PropsSI('D', 'T', T_K, 'P', P_Pa, 'Water')
-        mu = PropsSI('V', 'T', T_K, 'P', P_Pa, 'Water')
-        Area = math.pi * (ID_m / 2)**2
-        velocity = m_dot_kg_s / (rho * Area)
-        Re = (rho * velocity * ID_m) / mu
-        
-        if Re > 4000:
-            f = (-1.8 * math.log10((roughness/1000/ID_m/3.7)**1.11 + 6.9/Re))**-2
-        elif Re > 0:
-            f = 64 / Re
-        else:
-            f = 0
-        
-        dP_Pa = f * (length / ID_m) * (rho * velocity**2 / 2)
-        dP_bar = dP_Pa / 100000
-        
-        # Sonuçları Session State'e kaydet (Sayfa yenilense de kalsın diye)
-        st.session_state['result'] = {
-            "dp": dP_bar, "vel": velocity, "re": Re, "f": f,
-            "rho": rho, "mu": mu, "id": ID_mm
-        }
-
-        # Veritabanına Yaz
-        conn = sqlite3.connect("project_data.db")
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO projects (name, material, nps, sch, pressure_drop, velocity)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (project_name, material_name, nps_selected, sch_selected, dP_bar, velocity))
-        conn.commit()
-        conn.close()
-        
-        st.toast("Calculation Saved Successfully!", icon="✅")
-
-    except Exception as e:
-        st.error(f"Error: {e}")
-
-# --- SONUÇLARI GÖSTER (Dashboard Kısmı) ---
-if 'result' in st.session_state:
-    res = st.session_state['result']
+    col_safe1, col_safe2 = st.columns([1, 1])
     
-    # 1. Büyük Kartlar (Metrics)
-    st.subheader("Calculation Results")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Pressure Drop", f"{res['dp']:.4f} bar", delta_color="inverse")
-    c2.metric("Velocity", f"{res['vel']:.2f} m/s")
-    c3.metric("Reynolds No", f"{res['re']:.0f}")
-    c4.metric("Friction Factor", f"{res['f']:.5f}")
+    with col_safe1:
+        with st.container(border=True):
+            st.subheader("Design Conditions")
+            design_pres = st.number_input("Design Pressure (bar)", value=40.0)
+            design_temp = st.number_input("Design Temperature (°C)", value=120.0)
+            
+            # ASME Formülü Gösterimi
+            st.markdown("### Formula (ASME B31.3)")
+            st.latex(r''' t_{min} = \frac{P \cdot D}{2 (S \cdot E + P \cdot Y)} ''')
+            st.caption("P: Pressure, D: OD, S: Stress, E: Quality Factor, Y: Temp Coeff")
 
-    # 2. Detaylı Özellikler (Expander)
-    with st.expander("Show Fluid Properties"):
-        st.write(f"Density: {res['rho']:.2f} kg/m³ | Viscosity: {res['mu']:.6f} Pa.s | Pipe ID: {res['id']:.2f} mm")
+    with col_safe2:
+        if st.button("🛡️ RUN SAFETY ANALYSIS", type="primary", use_container_width=True):
+            # Parametreler
+            P_MPa = design_pres / 10.0 # Bar -> MPa
+            S_MPa = material_props[material_name]["stress"] # Malzeme dayanımı
+            OD_mm = pipe_database[nps_selected][sch_selected]["OD"]
+            WT_actual = pipe_database[nps_selected][sch_selected]["WT"]
+            
+            # Sabitler (Basitleştirilmiş)
+            E = 1.0 # Seamless Pipe assumed
+            Y = 0.4 # For Ferritic steels < 482 C
+            
+            # Hesaplama: Gereken Minimum Et Kalınlığı
+            # t = (P * D) / (2 * (S*E + P*Y))
+            t_required = (P_MPa * OD_mm) / (2 * (S_MPa * E + P_MPa * Y))
+            
+            # Korozyon Payı (Corrosion Allowance - C)
+            C = 1.0 # 1 mm pay bırakalım
+            t_min_total = t_required + C
+            
+            # Güvenlik Kontrolü
+            safety_ratio = WT_actual / t_min_total
+            is_safe = safety_ratio >= 1.0
+            
+            # Sonuç Kartları
+            st.subheader("Analysis Result")
+            
+            m1, m2 = st.columns(2)
+            m1.metric("Required Thickness (w/ Corrosion)", f"{t_min_total:.2f} mm")
+            m2.metric("Actual Thickness (Selected)", f"{WT_actual:.2f} mm")
+            
+            # Görsel Gösterge (Gauge Chart benzeri)
+            st.write("### Safety Status")
+            if is_safe:
+                st.success(f"✅ SAFE! The pipe is strong enough. (Safety Factor: {safety_ratio:.2f})")
+                st.progress(min(safety_ratio/3, 1.0)) # Barı doldur
+            else:
+                st.error(f"⚠️ UNSAFE! Pipe wall is too thin. Need at least {t_min_total:.2f} mm")
+                st.progress(min(safety_ratio/3, 1.0))
 
-st.markdown("---")
+            # Grafiksel Gösterim (Required vs Actual)
+            fig_safe = go.Figure()
+            fig_safe.add_trace(go.Bar(x=["Required", "Actual"], y=[t_min_total, WT_actual], 
+                                     marker_color=['red', 'green']))
+            fig_safe.update_layout(title="Thickness Comparison", yaxis_title="Thickness (mm)")
+            st.plotly_chart(fig_safe, use_container_width=True)
 
-# --- ALT KISIM: VERİTABANI TABLOSU VE GRAFİKLER ---
-tab_db, tab_graph = st.tabs(["📂 Project Database (Excel)", "📈 Analysis Graph"])
-
-with tab_db:
+# ==================================================
+# SAYFA 3: DATABASE & ANALYTICS
+# ==================================================
+elif page_selection == "📊 Project Database":
+    st.title("📊 Project Database & Analytics")
+    
     conn = sqlite3.connect("project_data.db")
     df = pd.read_sql("SELECT * FROM projects ORDER BY id DESC", conn)
     conn.close()
     
-    # Excel Görünümü
-    edited_df = st.data_editor(
-        df, hide_index=True, use_container_width=True, num_rows="dynamic",
-        column_config={
-            "pressure_drop": st.column_config.NumberColumn("Drop (bar)", format="%.4f"),
-            "velocity": st.column_config.NumberColumn("Vel (m/s)", format="%.2f"),
-            "timestamp": "Date"
-        }
-    )
-    # İndirme Butonu
-    csv = edited_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download List", csv, "projects.csv", "text/csv")
-
-with tab_graph:
-    if st.button("Generate Diameter Comparison Graph"):
-        # Grafik için hızlı hesaplama döngüsü (Girdiler Sidebar'dan alınıyor)
-        graph_data = []
-        try:
-            # Sabitleri al
-            T_K = temp + 273.15
-            P_Pa = pressure * 100000
-            m_kg_s = flow * 1000 / 3600
-            rho = PropsSI('D', 'T', T_K, 'P', P_Pa, 'Water')
-            mu = PropsSI('V', 'T', T_K, 'P', P_Pa, 'Water')
-            rough = material_list[material_name]
-
-            for size in pipe_database.keys():
-                if sch_selected in pipe_database[size]:
-                    d_props = pipe_database[size][sch_selected]
-                    cur_ID = d_props['OD'] - 2*d_props['WT']
-                    ID_m = cur_ID / 1000
-                    area = math.pi * (ID_m/2)**2
-                    v = m_kg_s / (rho * area)
-                    re = (rho * v * ID_m) / mu
-                    
-                    if re > 4000:
-                        f = (-1.8 * math.log10((rough/1000/ID_m/3.7)**1.11 + 6.9/re))**-2
-                    else:
-                        f = 64/re if re>0 else 0
-                    
-                    dp_b = (f * (length/ID_m) * (rho * v**2 / 2)) / 100000
-                    if dp_b < 500:
-                        graph_data.append({"NPS": size, "Pressure Drop (bar)": dp_b})
+    if not df.empty:
+        col_db1, col_db2 = st.columns([2, 1])
+        
+        with col_db1:
+            st.subheader("Saved Calculations")
+            st.dataframe(df, use_container_width=True, hide_index=True)
             
-            df_g = pd.DataFrame(graph_data)
-            fig = px.line(df_g, x="NPS", y="Pressure Drop (bar)", markers=True, 
-                          title=f"Pressure Drop vs Diameter ({sch_selected})")
-            st.plotly_chart(fig, use_container_width=True)
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Database (CSV)", csv, "database.csv", "text/csv")
             
-        except Exception as e:
-            st.error("Check inputs.")
+        with col_db2:
+            st.subheader("Insights")
+            # Basit bir analiz grafiği: Çaplara göre Basınç Kaybı dağılımı
+            fig_stat = px.box(df, x="nps", y="pressure_drop", title="Pressure Drop Distribution by Size")
+            st.plotly_chart(fig_stat, use_container_width=True)
+    else:
+        st.info("No data saved yet. Go to Calculator and save a project.")
